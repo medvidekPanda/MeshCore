@@ -715,6 +715,12 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.advert_loc_policy = ADVERT_LOC_PREFS;
 
   _prefs.adc_multiplier = 0.0f; // 0.0f means use default board multiplier
+
+#ifdef ESP_PLATFORM
+  // WiFi and BT default to disabled for low power
+  _prefs.wifi_enabled = 0;
+  _prefs.bt_enabled = 0;
+#endif
 }
 
 void MyMesh::begin(FILESYSTEM *fs) {

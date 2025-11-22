@@ -48,6 +48,9 @@ struct NodePrefs { // persisted to file
   uint8_t advert_loc_policy;
   uint32_t discovery_mod_timestamp;
   float adc_multiplier;
+  // WiFi and Bluetooth settings
+  uint8_t wifi_enabled;  // boolean, default 0 (disabled)
+  uint8_t bt_enabled;    // boolean, default 0 (disabled)
 };
 
 class CommonCLICallbacks {
@@ -81,6 +84,14 @@ public:
   };
 
   virtual void restartBridge() {
+    // no op by default
+  };
+
+  virtual void setWifiState(bool enable) {
+    // no op by default
+  };
+
+  virtual void setBtState(bool enable) {
     // no op by default
   };
 };

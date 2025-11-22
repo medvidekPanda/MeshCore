@@ -76,7 +76,49 @@ void setup() {
 
   command[0] = 0;
 
-#ifdef WITH_MQTT_BRIDGE
+  sensors.begin();
+
+  the_mesh.begin(fs);
+
+#ifdef ESP_PLATFORM
+  // Initialize WiFi only if enabled in prefs
+  if (the_mesh.getNodePrefs()->wifi_enabled) {
+    #ifdef WITH_MQTT_BRIDGE
+      #ifdef WIFI_SSID
+        Serial.print("Connecting to WiFi for MQTT: ");
+        Serial.println(WIFI_SSID);
+        WiFi.begin(WIFI_SSID, WIFI_PWD);
+        int wifi_timeout = 0;
+        while (WiFi.status() != WL_CONNECTED && wifi_timeout < 20) {
+          delay(500);
+          Serial.print(".");
+          wifi_timeout++;
+        }
+        Serial.println();
+        if (WiFi.status() == WL_CONNECTED) {
+          Serial.print("WiFi connected! IP: ");
+          Serial.println(WiFi.localIP());
+        } else {
+          Serial.println("WiFi connection failed! MQTT bridge will not work.");
+        }
+      #else
+        Serial.println("WiFi enabled but WIFI_SSID not defined!");
+      #endif
+    #else
+      Serial.println("WiFi enabled but MQTT bridge not compiled!");
+    #endif
+  } else {
+    Serial.println("WiFi disabled (use 'set wifi on' to enable)");
+  }
+
+  // BT initialization would go here if needed
+  // Currently BT is only used in companion_radio firmware
+  if (the_mesh.getNodePrefs()->bt_enabled) {
+    Serial.println("BT enabled (not yet implemented for repeater)");
+  } else {
+    Serial.println("BT disabled (use 'set bt on' to enable)");
+  }
+#elif defined(WITH_MQTT_BRIDGE)
   #ifdef WIFI_SSID
     Serial.print("Connecting to WiFi for MQTT: ");
     Serial.println(WIFI_SSID);
@@ -98,8 +140,6 @@ void setup() {
     #error "WIFI_SSID must be defined for MQTT bridge"
   #endif
 #endif
-
-  sensors.begin();
 
   the_mesh.begin(fs);
 

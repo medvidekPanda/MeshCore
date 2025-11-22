@@ -1,0 +1,21 @@
+# ESP32-S3 SDK Configuration for Low Power Repeater
+# Disables Bluetooth and WiFi to minimize power consumption
+
+# Disable Bluetooth
+CONFIG_BT_ENABLED=n
+
+# Disable WiFi
+CONFIG_ESP32_WIFI_ENABLED=n
+
+# Disable Bluetooth Classic
+CONFIG_BT_CLASSIC_ENABLED=n
+
+# Disable BLE
+CONFIG_BT_BLE_ENABLED=n
+
+# Disable Bluetooth Controller
+CONFIG_BT_CONTROLLER_ENABLED=n
+
+# Disable Bluetooth Host
+CONFIG_BT_BLUEDROID_ENABLED=n
+
