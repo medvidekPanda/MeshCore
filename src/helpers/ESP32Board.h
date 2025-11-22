@@ -43,6 +43,8 @@ public:
   }
 
   uint8_t getStartupReason() const override { return startup_reason; }
+  void setStartupReason(uint8_t reason) { startup_reason = reason; }
+  void clearStartupReason() { startup_reason = BD_STARTUP_NORMAL; }
 
 #if defined(P_LORA_TX_LED)
   void onBeforeTransmit() override {
