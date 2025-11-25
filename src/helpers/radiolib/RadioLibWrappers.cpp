@@ -82,6 +82,16 @@ void RadioLibWrapper::loop() {
   }
 }
 
+void RadioLibWrapper::forcePacketReady() {
+  state |= STATE_INT_READY;
+}
+
+void RadioLibWrapper::reinitInterrupts() {
+  // Re-initialize interrupt handler after light sleep
+  // This is needed because gpio_isr_handler_remove() was called before sleep
+  _radio->setPacketReceivedAction(setFlag);
+}
+
 void RadioLibWrapper::startRecv() {
   int err = _radio->startReceive();
   if (err == RADIOLIB_ERR_NONE) {

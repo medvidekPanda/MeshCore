@@ -23,6 +23,11 @@
 #define WITH_BRIDGE
 #endif
 
+#ifdef WITH_MQTT_BRIDGE
+#include "helpers/bridges/MQTTBridge.h"
+#define WITH_BRIDGE
+#endif
+
 #include <helpers/AdvertDataHelpers.h>
 #include <helpers/ArduinoHelpers.h>
 #include <helpers/ClientACL.h>
@@ -110,6 +115,8 @@ class MyMesh : public mesh::Mesh, public CommonCLICallbacks {
   RS232Bridge bridge;
 #elif defined(WITH_ESPNOW_BRIDGE)
   ESPNowBridge bridge;
+#elif defined(WITH_MQTT_BRIDGE)
+  MQTTBridge bridge;
 #endif
 
   void putNeighbour(const mesh::Identity& id, uint32_t timestamp, float snr);
@@ -223,6 +230,18 @@ public:
     if (!bridge.isRunning()) return;
     bridge.end();
     bridge.begin();
+  }
+#endif
+
+#ifdef ESP_PLATFORM
+  void setWifiState(bool enable) override {
+    _prefs.wifi_enabled = enable;
+    // WiFi state will be applied on next reboot
+  }
+
+  void setBtState(bool enable) override {
+    _prefs.bt_enabled = enable;
+    // BT state will be applied on next reboot
   }
 #endif
 };
