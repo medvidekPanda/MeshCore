@@ -42,7 +42,7 @@ static Adafruit_BME280 BME280;
 #endif
 #define TELEM_BMP280_SEALEVELPRESSURE_HPA (1013.25)    // Athmospheric pressure at sea level
 #include <Adafruit_BMP280.h>
-static Adafruit_BMP280 BMP280;
+static Adafruit_BMP280 BMP280(TELEM_WIRE);
 #endif
 
 #if ENV_INCLUDE_SHTC3
@@ -200,13 +200,27 @@ bool EnvironmentSensorManager::begin() {
   #endif
 
   #if ENV_INCLUDE_BMP280
+  // Try primary address (0x76)
+  Serial.printf("[INIT] Trying BMP280 at address 0x%02X...\n", TELEM_BMP280_ADDRESS);
   if (BMP280.begin(TELEM_BMP280_ADDRESS)) {
+    Serial.printf("[INIT] Found BMP280 at address: 0x%02X, ID: 0x%02X\n", TELEM_BMP280_ADDRESS, BMP280.sensorID());
     MESH_DEBUG_PRINTLN("Found BMP280 at address: %02X", TELEM_BMP280_ADDRESS);
     MESH_DEBUG_PRINTLN("BMP sensor ID: %02X", BMP280.sensorID());
     BMP280_initialized = true;
   } else {
-    BMP280_initialized = false;
-    MESH_DEBUG_PRINTLN("BMP280 was not found at I2C address %02X", TELEM_BMP280_ADDRESS);
+    // Try alternate address (0x77) if primary failed
+    uint8_t alt_address = 0x77;
+    Serial.printf("[INIT] BMP280 NOT found at 0x%02X, trying alternate address 0x%02X...\n", TELEM_BMP280_ADDRESS, alt_address);
+    if (BMP280.begin(alt_address)) {
+      Serial.printf("[INIT] Found BMP280 at address: 0x%02X, ID: 0x%02X\n", alt_address, BMP280.sensorID());
+      MESH_DEBUG_PRINTLN("Found BMP280 at address: %02X", alt_address);
+      MESH_DEBUG_PRINTLN("BMP sensor ID: %02X", BMP280.sensorID());
+      BMP280_initialized = true;
+    } else {
+      BMP280_initialized = false;
+      Serial.printf("[INIT] BMP280 NOT found at either 0x%02X or 0x%02X\n", TELEM_BMP280_ADDRESS, alt_address);
+      MESH_DEBUG_PRINTLN("BMP280 was not found at I2C addresses %02X or %02X", TELEM_BMP280_ADDRESS, alt_address);
+    }
   }
   #endif
 
@@ -222,15 +236,18 @@ bool EnvironmentSensorManager::begin() {
 
 
   #if ENV_INCLUDE_SHT4X
+  Serial.printf("[INIT] Trying SHT4X at address 0x%02X...\n", TELEM_SHT4X_ADDRESS);
   SHT4X.begin(*TELEM_WIRE, TELEM_SHT4X_ADDRESS);
   uint32_t serialNumber = 0;
   int16_t sht4x_error;
   sht4x_error = SHT4X.serialNumber(serialNumber);
   if (sht4x_error == 0) {
+    Serial.printf("[INIT] Found SHT4X at address: 0x%02X, SN: %u\n", TELEM_SHT4X_ADDRESS, serialNumber);
     MESH_DEBUG_PRINTLN("Found SHT4X at address: %02X", TELEM_SHT4X_ADDRESS);
     SHT4X_initialized = true;
   } else {
     SHT4X_initialized = false;
+    Serial.printf("[INIT] SHT4X NOT found at I2C address 0x%02X (error: %d)\n", TELEM_SHT4X_ADDRESS, sht4x_error);
     MESH_DEBUG_PRINTLN("SHT4X was not found at I2C address %02X", TELEM_SHT4X_ADDRESS);
   }
   #endif
@@ -368,9 +385,13 @@ bool EnvironmentSensorManager::querySensors(uint8_t requester_permissions, Cayen
 
     #if ENV_INCLUDE_BMP280
     if (BMP280_initialized) {
-      telemetry.addTemperature(TELEM_CHANNEL_SELF, BMP280.readTemperature());
-      telemetry.addBarometricPressure(TELEM_CHANNEL_SELF, BMP280.readPressure()/100);
-      telemetry.addAltitude(TELEM_CHANNEL_SELF, BMP280.readAltitude(TELEM_BMP280_SEALEVELPRESSURE_HPA));
+      float temp = BMP280.readTemperature();
+      float pressure = BMP280.readPressure() / 100;
+      float altitude = BMP280.readAltitude(TELEM_BMP280_SEALEVELPRESSURE_HPA);
+      MESH_DEBUG_PRINTLN("[BMP280] T=%.2f°C, P=%.2f hPa, Alt=%.2f m", temp, pressure, altitude);
+      telemetry.addTemperature(TELEM_CHANNEL_SELF, temp);
+      telemetry.addBarometricPressure(TELEM_CHANNEL_SELF, pressure);
+      telemetry.addAltitude(TELEM_CHANNEL_SELF, altitude);
     }
     #endif
 

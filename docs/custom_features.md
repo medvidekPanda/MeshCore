@@ -282,6 +282,99 @@ build_flags =
 - Battery measurement happens only on timeout wakeup, not on packet wakeup (to save power)
 - Measurement uses the same method as manual battery checks (A0 pin with 1/2 voltage divider)
 
+### Companion Radio with Light Sleep and Environmental Sensors
+
+For companion radio devices that need to operate in low-power mode while periodically reading environmental sensors, use `Xiao_S3_WIO_companion_radio_low_sleep`. This variant:
+
+1. **Implements light sleep mode** - device enters light sleep and wakes up on LoRa packet (DIO1 interrupt) or timeout for sensor reading
+2. **WiFi and Bluetooth disabled** - no BLE_PIN_CODE or WIFI_SSID defined to save power
+3. **Periodic sensor reading** - automatically reads environmental sensors at configurable intervals
+4. **Sensor data logging** - logs all sensor readings to Serial for debugging
+
+**Key features:**
+
+- Device enters light sleep after processing
+- Automatically wakes up on incoming LoRa packet or sensor reading timeout
+- Radio stays in RX mode during sleep (unlike deep sleep)
+- **Sensor reading interval**: 30 minutes (1800 seconds) for production, 1 minute (60 seconds) for debug
+- **Supported sensors**: SHT40 (temperature, humidity) and BMP280 (pressure, altitude)
+- **BMP280 auto-detection**: automatically tries both I2C addresses (0x76 and 0x77)
+- **Sensor data logging**: all readings are logged to Serial in human-readable format
+- **Battery voltage**: included in sensor telemetry
+
+**Configuration:**
+
+```ini
+[env:Xiao_S3_WIO_companion_radio_low_sleep]
+extends = Xiao_S3_WIO
+build_flags =
+  ${Xiao_S3_WIO.build_flags}
+  -D ENABLE_LIGHT_SLEEP=1
+  -D DISABLE_WIFI_OTA=1
+  -D PIN_STATUS_LED=RADIOLIB_NC
+  ; Debug mode: 1 minute sensor reading interval
+  -D DEBUG_SENSOR_READ=1
+  ; Production mode: 30 minute sensor reading interval (remove DEBUG_SENSOR_READ)
+```
+
+**Sensor Reading:**
+
+- Sensors are read when device wakes up from timeout (not on packet wakeup)
+- Data is encoded in CayenneLPP format
+- All sensor values are logged to Serial:
+  - Temperature (°C)
+  - Humidity (%)
+  - Pressure (hPa)
+  - Altitude (m)
+  - Battery voltage (V)
+  - Current (A) and Power (W) if INA3221 is present
+
+**BMP280 I2C Address Detection:**
+
+The BMP280 sensor can use either I2C address 0x76 or 0x77 depending on the solder bridge configuration. The firmware automatically tries both addresses during initialization:
+
+1. First attempts address 0x76 (default)
+2. If not found, tries address 0x77 (alternate)
+3. Logs which address was successful
+
+**Power consumption:**
+
+- Light sleep: ~5-15mA (depends on radio module)
+- Active mode (sensor reading): ~50-100mA
+- Sensor reading duration: ~100-200ms per reading
+- Significant savings compared to always-active mode
+
+**Usage Example:**
+
+1. **Upload firmware** with companion radio low sleep variant:
+
+   ```bash
+   pio run -e Xiao_S3_WIO_companion_radio_low_sleep -t upload --upload-port /dev/cu.usbmodem11301
+   ```
+
+2. **Monitor sensor readings** via Serial:
+
+   ```
+   [SENSOR] Reading sensors (interval: 60 secs)
+     [CH1] Voltage: 1.150 V
+     [CH1] Temperature: 27.20°C
+     [CH1] Humidity: 46.50%
+     [CH1] Pressure: 1013.25 hPa
+     [CH1] Altitude: 150.00 m
+   [SENSOR] Sensor reading complete
+   ```
+
+3. **For production use**, remove `DEBUG_SENSOR_READ` flag to use 30-minute interval:
+
+   ```ini
+   build_flags =
+     ${Xiao_S3_WIO.build_flags}
+     -D ENABLE_LIGHT_SLEEP=1
+     -D DISABLE_WIFI_OTA=1
+     -D PIN_STATUS_LED=RADIOLIB_NC
+     ; 30-minute interval (default when DEBUG_SENSOR_READ is not defined)
+   ```
+
 ### Usage Example
 
 1. **Upload firmware** with super lowpower variant:
