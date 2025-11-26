@@ -12,6 +12,26 @@ public:
   void begin() {
     ESP32Board::begin();
 
+    #if defined(A0) || defined(PIN_VBAT_READ)
+      // Initialize battery voltage measurement pin (A0 on ESP32-S3 XIAO)
+      // Use A0 constant if available (as per Seeed Studio wiki), otherwise use PIN_VBAT_READ
+      int batt_pin = -1;
+      #if defined(A0)
+        batt_pin = A0;
+      #elif defined(PIN_VBAT_READ)
+        batt_pin = PIN_VBAT_READ;
+      #endif
+      if (batt_pin >= 0) {
+        pinMode(batt_pin, INPUT);
+        analogReadResolution(12); // 12-bit resolution for better accuracy
+        // Set ADC attenuation to 11dB (0-3.3V range) for ESP32-S3
+        // This is important for proper voltage measurement
+        #ifdef ESP32
+          analogSetPinAttenuation(batt_pin, ADC_11db);
+        #endif
+      }
+    #endif
+
     esp_reset_reason_t reason = esp_reset_reason();
     if (reason == ESP_RST_DEEPSLEEP) {
       // Check if wake-up was due to EXT0 (DIO1 - LoRa packet)
@@ -121,6 +141,61 @@ public:
 
   void powerOff() override {
     enterDeepSleep(0);
+  }
+
+  uint16_t getBattMilliVolts() override {
+    // Battery voltage measurement on A0 pin with 1/2 voltage divider
+    // Based on Seeed Studio wiki: https://wiki.seeedstudio.com/check_battery_voltage/
+    // The battery voltage is divided by 1/2 with 200kΩ resistors and connected to A0
+    // Use A0 constant if available (as per Seeed Studio wiki), otherwise use PIN_VBAT_READ
+    #if defined(A0) || defined(PIN_VBAT_READ)
+      // Determine which pin to use
+      #if defined(A0)
+        int pin = A0;  // Use A0 constant as per Seeed Studio wiki
+      #else
+        int pin = PIN_VBAT_READ;
+      #endif
+      
+      // Ensure ADC is properly configured
+      analogReadResolution(12); // 12-bit resolution
+      
+      // Average 16 readings to remove spike-like errors during communication
+      // as recommended by Seeed Studio wiki
+      uint32_t Vbatt_raw = 0;
+      for (int i = 0; i < 16; i++) {
+        // analogReadMilliVolts() returns voltage on pin in mV (already corrected by ESP32)
+        // With 1/2 divider, pin voltage = battery_voltage / 2
+        uint32_t pin_mv = analogReadMilliVolts(pin);
+        Vbatt_raw += pin_mv;
+        delay(1); // Small delay between readings for stability
+      }
+      
+      // Calculate average pin voltage (in mV)
+      uint32_t avg_pin_voltage_mv = Vbatt_raw / 16;
+      
+      // Attenuation ratio is 1/2, so multiply by 2 to get actual battery voltage
+      // Result is in mV
+      uint32_t battery_mv = 2 * avg_pin_voltage_mv;
+      
+      // Debug output to help diagnose issues
+      // Shows: pin number used, raw pin voltage, calculated battery voltage
+      Serial.printf("[BATT] pin=%d, pin_mv=%lu, battery_mv=%lu\n", pin, avg_pin_voltage_mv, battery_mv);
+      
+      // If reading is suspiciously low (< 50mV), it might indicate:
+      // 1. No voltage divider connected (pin sees noise only)
+      // 2. Wrong pin number
+      // 3. Pin not properly configured
+      // For now, return the actual value even if low, so we can debug
+      // (Previously returned 0 if < 50mV, but that hides the actual reading)
+      
+      // Clamp to reasonable range (0-5000mV = 0-5V) to avoid overflow
+      if (battery_mv > 5000) battery_mv = 5000;
+      
+      return (uint16_t)battery_mv;
+    #else
+      // Fallback to parent implementation if neither A0 nor PIN_VBAT_READ defined
+      return ESP32Board::getBattMilliVolts();
+    #endif
   }
 
   const char* getManufacturerName() const override {

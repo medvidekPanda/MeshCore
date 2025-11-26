@@ -207,10 +207,11 @@ void loop() {
   bool usb_connected = false;
 #ifdef ESP_PLATFORM
   // On ESP32-S3, Serial uses USB-Serial-JTAG
-  // Check if Serial port is available for writing (indicates USB connection)
-  // USB connection is detected by checking if Serial port is ready
-  // Note: This is a simple heuristic - Serial.availableForWrite() returns non-zero if USB is connected
-  usb_connected = (Serial.availableForWrite() >= 0); // USB-Serial-JTAG is available if USB is connected
+  // USB detection is disabled for now - the previous method was always returning true
+  // TODO: Implement proper USB detection if needed (e.g., using USB Serial events or GPIO)
+  // For now, device will enter light sleep even if USB is connected
+  // This allows low power operation in production use cases
+  // usb_connected = false; // Explicitly disabled for now
 #endif
 
   // Check if there's any serial activity (commands)
@@ -218,11 +219,15 @@ void loop() {
     last_activity = now;
   }
 
+  // Periodic battery measurement every hour (3600 seconds) for safety monitoring
+  // This is handled via light sleep timeout wakeup - no need to measure here
+  // Battery measurement happens after wakeup from light sleep timeout (see below)
+
   // If USB is connected, extend the awake time to 2 minutes (120 seconds)
   // This allows time to connect via USB from PC after hard reset
-  const unsigned long USB_AWAKE_TIME = 120000; // 2 minutes in milliseconds
+  const unsigned long USB_AWAKE_TIME = 120000;    // 2 minutes in milliseconds
   const unsigned long NORMAL_STARTUP_TIME = 5000; // 5 seconds for normal startup
-  
+
   unsigned long min_awake_time = usb_connected ? USB_AWAKE_TIME : NORMAL_STARTUP_TIME;
 
   // Wait at least min_awake_time after startup before considering light sleep
@@ -233,7 +238,7 @@ void loop() {
   }
 
   // If USB is connected, don't enter light sleep at all
-  // This ensures device stays awake for USB access
+  // This ensures device stays awake for USB access and Serial monitor works
   if (usb_connected) {
     // USB connected - stay awake, don't enter light sleep
     // Reset activity timer to keep device awake
@@ -254,10 +259,12 @@ void loop() {
 #ifdef LIGHT_SLEEP_TIMEOUT
     board.enterLightSleep(LIGHT_SLEEP_TIMEOUT);
 #else
-    // Default: 1 hour timeout as safety watchdog
-    // Device will wake up on LoRa packet OR after 1 hour (whichever comes first)
+    // Safety watchdog: wake up every hour (3600 seconds) to measure battery voltage
+    // Device will wake up on LoRa packet OR after timeout (whichever comes first)
     // This prevents device from sleeping forever if radio fails or interrupt doesn't work
-    board.enterLightSleep(3600); // 3600 seconds = 1 hour
+    // Battery voltage is measured on wakeup to monitor battery health
+    const unsigned long BATTERY_SAFETY_INTERVAL = 3600; // 1 hour in seconds
+    board.enterLightSleep(BATTERY_SAFETY_INTERVAL);
 #endif
 
     // Handle wakeup from light sleep
@@ -265,16 +272,32 @@ void loop() {
       // The wakeup was triggered by the LoRa DIO1 line.
       // RadioLib callbacks were not executed during light sleep, so mark the packet as ready.
       radio_driver.forcePacketReady();
+      
+      // CRITICAL: Process the packet IMMEDIATELY before re-initializing anything
+      // The packet is already in radio buffer and must be read before it's lost
+      // Don't wait for re-initialization - process it right away
+      the_mesh.loop();
+    } else {
+      // Wakeup was due to timeout (not packet) - periodic safety check (every 1 hour)
+      // Measure and log battery voltage for monitoring battery health
+      uint16_t batt_mv = board.getBattMilliVolts();
+      float batt_v = batt_mv / 1000.0f;
+
+      // Log battery voltage (USB connection check not needed here - we just woke up)
+      Serial.printf("[BATT] Safety check (hourly): Battery: %.3fV (%umV)\n", batt_v, batt_mv);
     }
 
     // CRITICAL: Re-initialize RadioLib interrupt handler after light sleep
     // The interrupt handler was removed before sleep to prevent conflicts
+    // This is done AFTER processing the wakeup packet (if any)
     radio_driver.reinitInterrupts();
 
-    // After wakeup from light sleep, always process packets
-    // (we woke up either due to packet or timeout, but most likely packet)
-    // Give radio time to stabilize after wakeup
-    delay(100);
+    // Ensure radio is in RX mode after re-initialization
+    // (if we didn't wake up from packet, this ensures radio is ready for next packets)
+    the_mesh.loop();
+    
+    // Minimal delay for radio stabilization - keep it short to catch packets quickly
+    delay(50);
 
     // Optimized adaptive processing: battle-tested for LoRa battery efficiency
     // Based on 3+ years of real-world LoRa mesh deployments on 400+ nodes
@@ -330,8 +353,19 @@ void loop() {
     if (!tx_completed && millis() - wakeup_start >= HARD_TIMEOUT) {
       Serial.println("WARNING: TX completion not detected within timeout");
     }
+    
+    // Ensure radio is back in RX mode after processing (important for trace route responses)
+    // Call mesh.loop() to ensure radio properly returns to RX mode
+    the_mesh.loop();
 
-    last_activity = millis(); // Reset activity timer after wakeup
+    // Reset activity timer after wakeup - this ensures device stays awake for at least
+    // 5 seconds after wakeup to handle trace route and other packets properly
+    last_activity = millis();
+    
+    // Minimal delay - device will stay awake for 5 seconds anyway due to last_activity reset
+    // This gives mesh time to finish any pending operations without blocking too long
+    delay(100);
+    
     board.clearStartupReason();
   }
 #endif

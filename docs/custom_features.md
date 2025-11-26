@@ -21,6 +21,7 @@ Added support for MQTT bridge on Room Server firmware, which allows forwarding m
 #### Build Variant
 
 For SEEED Xiao S3 WIO board, the following build variant is available:
+
 - `Xiao_S3_WIO_room_server_mqtt` - Room Server with MQTT bridge support
 
 #### Build Flags
@@ -50,6 +51,7 @@ build_flags =
 #### Packet Format
 
 MQTT payload contains:
+
 1. Magic bytes: `0x4D, 0x43` ("MC")
 2. 2-byte checksum (Fletcher16)
 3. Mesh packet data (serialized packet)
@@ -59,6 +61,7 @@ MQTT payload contains:
 If `MQTT_FILTER_CHANNELS` is defined, the bridge will only forward packets from specified channels (for `GRP_TXT` and `GRP_DATA` types).
 
 Example:
+
 ```ini
 -D MQTT_FILTER_CHANNELS='"0x01,0x02"'
 ```
@@ -85,6 +88,7 @@ venv/bin/python3 read.py [--broker IP] [--port PORT] [--secret HEX]
 ```
 
 Features:
+
 - Connect to MQTT broker
 - Decode mesh packets
 - Display human-readable information
@@ -99,6 +103,7 @@ venv/bin/python3 send.py [--broker IP] [--port PORT]
 ```
 
 Features:
+
 - Send text messages
 - Send telemetry data
 - Send control packets
@@ -126,6 +131,7 @@ Added ability to enable/disable WiFi and Bluetooth via CLI commands. This functi
 #### Build Variant
 
 For SEEED Xiao S3 WIO board, the following build variant is available:
+
 - `Xiao_S3_WIO_repeater_lowpower` - Repeater with WiFi and BT disabled by default
 
 **Note**: WiFi and BT are compiled into firmware, but not initialized at startup if disabled. This allows enabling them via CLI without recompilation.
@@ -179,6 +185,7 @@ BT enabled (not yet implemented for repeater)
 ### WiFi Initialization
 
 WiFi is initialized only if:
+
 1. `wifi_enabled = 1` in prefs
 2. `WITH_MQTT_BRIDGE` is compiled
 3. `WIFI_SSID` is defined in build flags
@@ -192,6 +199,7 @@ Bluetooth is prepared for future implementation. Currently, only the state (`bt_
 ### Power Savings
 
 Disabling WiFi and BT can significantly reduce power consumption:
+
 - **WiFi disabled**: ~10-50mA savings (depends on mode)
 - **BT disabled**: ~5-20mA savings
 
@@ -200,6 +208,7 @@ For maximum savings, use build variant `Xiao_S3_WIO_repeater_lowpower`, which ha
 ### Super Low Power Variant
 
 For maximum power savings, use `Xiao_S3_WIO_repeater_super_lowpower`. This variant:
+
 1.  Inherits from `lowpower` (WiFi/BT disabled).
 2.  **Underclocks CPU to 80MHz** (standard is 240MHz).
 3.  **Disables Status LED** blinking logic.
@@ -218,26 +227,32 @@ build_flags =
 ### Light Sleep Variant
 
 For ultra-low power consumption with fast wakeup, use `Xiao_S3_WIO_repeater_low_sleep`. This variant:
+
 1. Inherits from `lowpower` (WiFi/BT disabled).
 2. **Implements light sleep mode** - device enters light sleep after 5 seconds of inactivity.
 3. **GPIO wakeup** - wakes up automatically when LoRa packet is received (DIO1 interrupt).
 4. **Fast wakeup** - light sleep allows radio to stay in RX mode, enabling faster response than deep sleep.
+5. **Battery voltage monitoring** - automatically measures battery voltage every hour for safety monitoring.
 
 **Key features:**
+
 - Device enters light sleep after 5 seconds of inactivity
 - Automatically wakes up on incoming LoRa packet
 - Radio stays in RX mode during sleep (unlike deep sleep)
 - Interrupt handler is properly managed to prevent conflicts
 - Minimal power consumption while maintaining fast response
-- **USB detection** - if USB is connected, device stays awake to allow PC access
-- **Extended awake time** - after hard reset with USB connected, device stays awake for 2 minutes
+- **Safety watchdog** - wakes up every 1 hour (3600 seconds) to measure battery voltage, even if no packets are received
+- **Immediate packet processing** - packet that wakes device is processed immediately to prevent loss
+- **Radio state management** - proper RX mode initialization after wakeup for trace route support
 
 **Power consumption:**
+
 - Light sleep: ~5-15mA (depends on radio module)
 - Active mode: ~50-100mA
 - Significant savings compared to always-active mode
 
 **Technical implementation:**
+
 - GPIO interrupt handler is removed before sleep to prevent conflicts
 - GPIO wakeup is configured for DIO1 pin (LoRa packet detection)
 - After wakeup, RadioLib interrupt handler is re-initialized
@@ -257,16 +272,26 @@ build_flags =
   ; -D LIGHT_SLEEP_TIMEOUT=60
 ```
 
-**Note**: If `LIGHT_SLEEP_TIMEOUT` is not defined, device will sleep indefinitely until a packet is received.
+**Note**: If `LIGHT_SLEEP_TIMEOUT` is not defined, device will use default 1-hour safety watchdog timeout for battery voltage monitoring.
+
+**Battery Voltage Monitoring:**
+
+- Device automatically wakes up every 1 hour (3600 seconds) to measure battery voltage
+- Battery voltage is measured and logged to Serial when waking up from timeout
+- This provides safety monitoring of battery health even when no packets are received
+- Battery measurement happens only on timeout wakeup, not on packet wakeup (to save power)
+- Measurement uses the same method as manual battery checks (A0 pin with 1/2 voltage divider)
 
 ### Usage Example
 
 1. **Upload firmware** with super lowpower variant:
+
    ```bash
    pio run -e Xiao_S3_WIO_repeater_super_lowpower -t upload
    ```
 
 2. **Check status**:
+
    ```
    get wifi
      -> off
@@ -275,24 +300,29 @@ build_flags =
    ```
 
 3. **Enable WiFi** (when needed):
+
    ```
    set wifi on
    reboot
    ```
 
 4. **Disable WiFi** (for power savings):
+
    ```
    set wifi off
    reboot
    ```
 
 5. **Use light sleep variant** (for ultra-low power with fast wakeup):
+
    ```bash
    pio run -e Xiao_S3_WIO_repeater_low_sleep -t upload
    ```
-   
+
    Device will automatically enter light sleep after 5 seconds of inactivity and wake up on incoming packets.
-   
+
+   **Battery monitoring**: Device will automatically wake up every 1 hour to measure battery voltage, even if no packets are received. This provides safety monitoring of battery health. Battery voltage is logged to Serial when measured.
+
    **Note**: If USB is connected, device will stay awake and not enter light sleep, allowing you to connect via USB from PC even after hard reset.
 
 ### Technical Details
@@ -300,10 +330,12 @@ build_flags =
 #### NodePrefs Structure
 
 New fields added to `NodePrefs`:
+
 - `uint8_t wifi_enabled` - WiFi state (0 = disabled, 1 = enabled)
 - `uint8_t bt_enabled` - BT state (0 = disabled, 1 = enabled)
 
 Default values:
+
 - `wifi_enabled = 0` (disabled)
 - `bt_enabled = 0` (disabled)
 
@@ -318,6 +350,7 @@ Default values:
 ## Related Files
 
 ### MQTT Bridge
+
 - `src/helpers/bridges/MQTTBridge.h` - MQTT bridge header
 - `src/helpers/bridges/MQTTBridge.cpp` - MQTT bridge implementation
 - `examples/simple_room_server/MyMesh.h` - Room Server MyMesh with bridge support
@@ -327,6 +360,7 @@ Default values:
 - `requirements.txt` - Python dependencies
 
 ### WiFi/BT CLI
+
 - `src/helpers/CommonCLI.h` - CLI interface with WiFi/BT commands
 - `src/helpers/CommonCLI.cpp` - CLI implementation
 - `examples/simple_repeater/MyMesh.h` - Repeater MyMesh with WiFi/BT methods
@@ -335,9 +369,20 @@ Default values:
 - `variants/xiao_s3_wio/platformio.ini` - Build configuration
 
 ### Light Sleep
+
 - `variants/xiao_s3_wio/XiaoS3WIOBoard.h` - Light sleep implementation for ESP32-S3
 - `src/helpers/radiolib/RadioLibWrappers.h/cpp` - RadioLib wrapper with interrupt reinitialization
 - `examples/simple_repeater/main.cpp` - Light sleep integration with USB detection and optimized TX completion
+
+### Battery Voltage Measurement
+
+- `variants/xiao_s3_wio/XiaoS3WIOBoard.h` - Battery voltage measurement on A0 pin (GPIO 1) with 1/2 voltage divider
+- `variants/xiao_s3_wio/platformio.ini` - PIN_VBAT_READ=1 configuration for lowpower variants
+- Based on [Seeed Studio wiki](https://wiki.seeedstudio.com/check_battery_voltage/) - requires external 200kΩ resistor divider circuit
+- **Automatic safety monitoring** - battery voltage is measured every 1 hour (3600 seconds) in `low_sleep` variant
+- Measurement happens automatically on wakeup from light sleep timeout (safety watchdog)
+- Uses 16-sample averaging to remove spike-like errors during communication (as recommended by Seeed Studio)
+- Battery voltage multiplier: 2x (due to 1/2 voltage divider on A0 pin)
 
 ---
 
@@ -349,6 +394,7 @@ Default values:
 **Date**: 2025-11-22
 
 **Changes**:
+
 - Added MQTT bridge implementation for Room Server (`MQTTBridge.h/cpp`)
 - Integration into Room Server firmware (`simple_room_server`)
 - Python scripts for reading/sending (`read.py`, `send.py`)
@@ -359,6 +405,7 @@ Default values:
 - WiFi initialization in repeater for MQTT bridge (optional)
 
 **Files**:
+
 - `src/helpers/bridges/MQTTBridge.h/cpp` - MQTT bridge implementation
 - `examples/simple_room_server/MyMesh.h/cpp` - Room Server integration
 - `examples/simple_room_server/main.cpp` - WiFi initialization
@@ -371,6 +418,7 @@ Default values:
 **Status**: Implemented, but not yet committed
 
 **Changes**:
+
 - Added WiFi and BT CLI control via `set wifi on/off` and `set bt on/off`
 - Added `get wifi` and `get bt` commands to display status
 - Conditional initialization of WiFi/BT at startup (only if enabled)
@@ -379,6 +427,7 @@ Default values:
 - WiFi and BT are compiled but not initialized by default
 
 **Files**:
+
 - `src/helpers/CommonCLI.h/cpp` - CLI commands
 - `examples/simple_repeater/MyMesh.h/cpp` - Repeater integration
 - `examples/simple_repeater/main.cpp` - Conditional initialization
@@ -389,6 +438,7 @@ Default values:
 **Status**: Implemented and tested
 
 **Changes**:
+
 - Added light sleep implementation for ESP32-S3 (`XiaoS3WIOBoard.h`)
 - GPIO wakeup support for LoRa packet detection (DIO1 pin)
 - Interrupt handler management (remove before sleep, reinit after wakeup)
@@ -400,19 +450,24 @@ Default values:
 - **USB connection detection** - device stays awake if USB is connected
 - **Extended awake time** - 2 minutes after hard reset if USB is connected
 - **Optimized TX completion detection** - uses `isInRecvMode()` instead of `isSendComplete()` to avoid conflicts with Dispatcher
+- **Battery voltage safety monitoring** - automatic measurement every 1 hour (3600 seconds) via light sleep timeout
+- Battery voltage measurement on GPIO 1 (A0 pin) with 1/2 voltage divider (200kΩ resistors)
 
 **Power savings**:
+
 - Light sleep: ~5-15mA (vs ~50-100mA active)
 - Radio stays in RX mode during sleep
 - Fast response time compared to deep sleep
 
 **USB detection**:
-- Automatically detects USB connection using `Serial.availableForWrite()`
-- If USB is connected, device never enters light sleep
-- After hard reset with USB connected, device stays awake for 2 minutes
-- Allows PC connection via USB even after power loss
+
+- USB detection was initially implemented but had a bug (always returned true)
+- USB detection is currently disabled to ensure device enters light sleep correctly
+- Device will enter light sleep regardless of USB connection (for production use)
+- Future: proper USB detection can be added if needed for development
 
 **Files**:
+
 - `variants/xiao_s3_wio/XiaoS3WIOBoard.h` - Light sleep implementation
 - `src/helpers/radiolib/RadioLibWrappers.h/cpp` - Interrupt reinitialization
 - `examples/simple_repeater/main.cpp` - Light sleep integration with USB detection
@@ -420,16 +475,99 @@ Default values:
 
 ---
 
+## Build and Upload
+
+### Building and Uploading Firmware
+
+To build and upload firmware for Xiao S3 WIO variants, use PlatformIO:
+
+```bash
+cd /Users/janptacek/git-projects/MeshCore
+~/.platformio/penv/bin/platformio run -e Xiao_S3_WIO_repeater_low_sleep -t upload
+```
+
+Available variants:
+
+- `Xiao_S3_WIO_repeater` - Standard repeater
+- `Xiao_S3_WIO_repeater_lowpower` - Low power repeater with WiFi/BT disabled by default
+- `Xiao_S3_WIO_repeater_super_lowpower` - Ultra low power (80MHz CPU, sensors disabled)
+- `Xiao_S3_WIO_repeater_low_sleep` - Low power with light sleep (battery voltage measurement enabled)
+- `Xiao_S3_WIO_room_server_mqtt` - Room Server with MQTT bridge
+
+### Battery Voltage Measurement
+
+For lowpower variants (`repeater_lowpower`, `repeater_super_lowpower`, `repeater_low_sleep`), battery voltage measurement on A0 pin (GPIO 1) is enabled by default. This requires an external voltage divider circuit (1/2 ratio with 200kΩ resistors) as described in the [Seeed Studio wiki](https://wiki.seeedstudio.com/check_battery_voltage/).
+
+**For `repeater_low_sleep` variant:**
+
+- Battery voltage is automatically measured every 1 hour (3600 seconds) via light sleep timeout wakeup
+- This provides safety monitoring of battery health even when no packets are received
+- Measurement happens only on timeout wakeup (not on packet wakeup) to minimize power consumption
+- Battery voltage is logged to Serial when measured: `[BATT] Safety check (hourly): Battery: X.XXXV (XXXmV)`
+- The 1-hour timeout also serves as a safety watchdog - prevents device from sleeping forever if radio fails
+
+**Measurement method:**
+
+- Uses A0 pin (GPIO 1) with 1/2 voltage divider (two 200kΩ resistors)
+- 16-sample averaging to remove spike-like errors during communication
+- Voltage multiplier: 2x (due to 1/2 divider)
+- Based on `analogReadMilliVolts()` with 12-bit ADC resolution
+
 ## Notes
 
 - **MQTT Bridge**: Requires WiFi connection and functional MQTT broker
 - **WiFi/BT CLI**: Changes require reboot to apply
 - **Lowpower variant**: WiFi and BT are compiled but not initialized by default
 - **Light Sleep**: USB connection detection keeps device awake for PC access
+- **Battery Measurement**: Requires external voltage divider circuit on A0 pin (GPIO 1) - two 200kΩ resistors
+- **Battery Safety Monitoring**: In `low_sleep` variant, battery voltage is measured every 1 hour automatically
 - **Compatibility**: All changes are backward compatible with existing configurations
 
 ---
 
-*Document created: 2025-11-22*
-*Last updated: 2025-01-XX*
-*Firmware version: add-mqtt branch (DEV)*
+_Document created: 2025-11-22_
+_Last updated: 2025-01-XX_
+_Firmware version: battery-test branch (DEV)_
+
+### Uncommitted changes: Battery Voltage Safety Monitoring and Light Sleep Fixes
+
+**Status**: Implemented and tested
+
+**Changes**:
+
+- Added automatic battery voltage measurement every 1 hour (3600 seconds) in `low_sleep` variant
+- Battery measurement happens on light sleep timeout wakeup (safety watchdog)
+- Measurement uses A0 pin (GPIO 1) with 1/2 voltage divider as per Seeed Studio wiki
+- 16-sample averaging to remove communication spikes
+- Battery voltage is logged to Serial: `[BATT] Safety check (hourly): Battery: X.XXXV (XXXmV)`
+- Corrected PIN_VBAT_READ to GPIO 1 (was incorrectly documented as GPIO 4)
+- **Fixed USB detection bug** - USB detection was always returning true, preventing light sleep entry (device consumed 64mA instead of ~10mA)
+- **Fixed packet loss after wakeup** - packet that wakes device from light sleep is now processed immediately before re-initialization, preventing trace route timeouts
+
+**Implementation details:**
+
+- Light sleep timeout set to 3600 seconds (1 hour) for safety watchdog
+- Battery measurement happens only on timeout wakeup, not on packet wakeup
+- Provides battery health monitoring even when no packets are received
+- Prevents device from sleeping forever if radio fails (safety watchdog function)
+- USB detection disabled (was causing device to never enter light sleep)
+- Wakeup packet processing: packet that triggers wakeup (DIO1 interrupt) is processed immediately via `the_mesh.loop()` before interrupt re-initialization
+- Radio re-initialization happens AFTER processing wakeup packet to prevent packet loss
+
+**Power consumption fixes:**
+
+- Fixed bug where faulty USB detection (`Serial.availableForWrite() >= 0` always true) prevented light sleep
+- Device now correctly enters light sleep and consumes ~10-15mA instead of ~64mA
+- Fast wakeup processing ensures packets are not lost during wakeup sequence
+
+**Trace route fixes:**
+
+- Wakeup packet is processed immediately to prevent loss
+- Radio state properly managed after wakeup for trace route responses
+- Minimal delays (50ms) for fast response after wakeup
+
+**Files**:
+
+- `variants/xiao_s3_wio/XiaoS3WIOBoard.h` - Battery voltage measurement implementation (GPIO 1)
+- `variants/xiao_s3_wio/platformio.ini` - PIN_VBAT_READ=1 configuration
+- `examples/simple_repeater/main.cpp` - Light sleep with 1-hour timeout, immediate packet processing, USB detection fix
