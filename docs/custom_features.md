@@ -488,15 +488,18 @@ cd /Users/janptacek/git-projects/MeshCore
 
 Available variants:
 
-- `Xiao_S3_WIO_repeater` - Standard repeater
-- `Xiao_S3_WIO_repeater_lowpower` - Low power repeater with WiFi/BT disabled by default
-- `Xiao_S3_WIO_repeater_super_lowpower` - Ultra low power (80MHz CPU, sensors disabled)
-- `Xiao_S3_WIO_repeater_low_sleep` - Low power with light sleep (battery voltage measurement enabled)
+- `Xiao_S3_WIO_repeater` - Standard repeater (battery voltage measurement enabled)
+- `Xiao_S3_WIO_repeater_lowpower` - Low power repeater with WiFi/BT disabled by default (battery voltage measurement enabled)
+- `Xiao_S3_WIO_repeater_super_lowpower` - Ultra low power (80MHz CPU, sensors disabled) (battery voltage measurement enabled)
+- `Xiao_S3_WIO_repeater_low_sleep` - Low power with light sleep (automatic hourly battery monitoring)
+- `Xiao_S3_WIO_companion_radio_usb` - Companion radio with USB interface (battery voltage in telemetry)
+- `Xiao_S3_WIO_companion_radio_ble` - Companion radio with BLE interface (battery voltage in telemetry)
+- `Xiao_S3_WIO_companion_radio_serial` - Companion radio with serial interface (battery voltage in telemetry)
 - `Xiao_S3_WIO_room_server_mqtt` - Room Server with MQTT bridge
 
 ### Battery Voltage Measurement
 
-For lowpower variants (`repeater_lowpower`, `repeater_super_lowpower`, `repeater_low_sleep`), battery voltage measurement on A0 pin (GPIO 1) is enabled by default. This requires an external voltage divider circuit (1/2 ratio with 200kΩ resistors) as described in the [Seeed Studio wiki](https://wiki.seeedstudio.com/check_battery_voltage/).
+For all Xiao S3 WIO variants (repeater and companion), battery voltage measurement on A0 pin (GPIO 1) is enabled by default. This requires an external voltage divider circuit (1/2 ratio with 200kΩ resistors) as described in the [Seeed Studio wiki](https://wiki.seeedstudio.com/check_battery_voltage/).
 
 **For `repeater_low_sleep` variant:**
 
@@ -505,6 +508,14 @@ For lowpower variants (`repeater_lowpower`, `repeater_super_lowpower`, `repeater
 - Measurement happens only on timeout wakeup (not on packet wakeup) to minimize power consumption
 - Battery voltage is logged to Serial when measured: `[BATT] Safety check (hourly): Battery: X.XXXV (XXXmV)`
 - The 1-hour timeout also serves as a safety watchdog - prevents device from sleeping forever if radio fails
+
+**For companion variants (`companion_radio_usb`, `companion_radio_ble`, `companion_radio_serial`):**
+
+- Battery voltage is measured on-demand when telemetry is requested (not automatically)
+- Battery voltage is included in telemetry responses (`REQ_TYPE_GET_TELEMETRY_DATA`)
+- Follows existing telemetry intervals - sent when requested by contacts/apps, not at fixed intervals
+- Battery voltage is also available in stats responses and UI display
+- No automatic hourly measurement (unlike repeater low_sleep variant)
 
 **Measurement method:**
 
