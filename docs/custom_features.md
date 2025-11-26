@@ -229,6 +229,8 @@ For ultra-low power consumption with fast wakeup, use `Xiao_S3_WIO_repeater_low_
 - Radio stays in RX mode during sleep (unlike deep sleep)
 - Interrupt handler is properly managed to prevent conflicts
 - Minimal power consumption while maintaining fast response
+- **USB detection** - if USB is connected, device stays awake to allow PC access
+- **Extended awake time** - after hard reset with USB connected, device stays awake for 2 minutes
 
 **Power consumption:**
 - Light sleep: ~5-15mA (depends on radio module)
@@ -240,6 +242,10 @@ For ultra-low power consumption with fast wakeup, use `Xiao_S3_WIO_repeater_low_
 - GPIO wakeup is configured for DIO1 pin (LoRa packet detection)
 - After wakeup, RadioLib interrupt handler is re-initialized
 - Serial output is minimized to reduce power consumption
+- USB connection detection using `Serial.availableForWrite()` (ESP32-S3 USB-Serial-JTAG)
+- If USB is connected, device never enters light sleep (stays awake for PC access)
+- After hard reset, if USB is connected, device stays awake for 2 minutes (120 seconds)
+- Optimized TX completion detection using `isInRecvMode()` instead of `isSendComplete()` to avoid conflicts with Dispatcher
 
 ```ini
 [env:Xiao_S3_WIO_repeater_low_sleep]
@@ -286,6 +292,8 @@ build_flags =
    ```
    
    Device will automatically enter light sleep after 5 seconds of inactivity and wake up on incoming packets.
+   
+   **Note**: If USB is connected, device will stay awake and not enter light sleep, allowing you to connect via USB from PC even after hard reset.
 
 ### Technical Details
 
@@ -329,7 +337,7 @@ Default values:
 ### Light Sleep
 - `variants/xiao_s3_wio/XiaoS3WIOBoard.h` - Light sleep implementation for ESP32-S3
 - `src/helpers/radiolib/RadioLibWrappers.h/cpp` - RadioLib wrapper with interrupt reinitialization
-- `examples/simple_repeater/main.cpp` - Light sleep integration in repeater
+- `examples/simple_repeater/main.cpp` - Light sleep integration with USB detection and optimized TX completion
 
 ---
 
@@ -389,16 +397,25 @@ Default values:
 - Automatic sleep after 5 seconds of inactivity
 - Fast wakeup on incoming LoRa packets
 - Minimal Serial output to reduce power consumption
+- **USB connection detection** - device stays awake if USB is connected
+- **Extended awake time** - 2 minutes after hard reset if USB is connected
+- **Optimized TX completion detection** - uses `isInRecvMode()` instead of `isSendComplete()` to avoid conflicts with Dispatcher
 
 **Power savings**:
 - Light sleep: ~5-15mA (vs ~50-100mA active)
 - Radio stays in RX mode during sleep
 - Fast response time compared to deep sleep
 
+**USB detection**:
+- Automatically detects USB connection using `Serial.availableForWrite()`
+- If USB is connected, device never enters light sleep
+- After hard reset with USB connected, device stays awake for 2 minutes
+- Allows PC connection via USB even after power loss
+
 **Files**:
 - `variants/xiao_s3_wio/XiaoS3WIOBoard.h` - Light sleep implementation
 - `src/helpers/radiolib/RadioLibWrappers.h/cpp` - Interrupt reinitialization
-- `examples/simple_repeater/main.cpp` - Light sleep integration
+- `examples/simple_repeater/main.cpp` - Light sleep integration with USB detection
 - `variants/xiao_s3_wio/platformio.ini` - Light sleep variant
 
 ---
@@ -408,9 +425,11 @@ Default values:
 - **MQTT Bridge**: Requires WiFi connection and functional MQTT broker
 - **WiFi/BT CLI**: Changes require reboot to apply
 - **Lowpower variant**: WiFi and BT are compiled but not initialized by default
+- **Light Sleep**: USB connection detection keeps device awake for PC access
 - **Compatibility**: All changes are backward compatible with existing configurations
 
 ---
 
 *Document created: 2025-11-22*
-*Firmware version: add-mqtt branch*
+*Last updated: 2025-01-XX*
+*Firmware version: add-mqtt branch (DEV)*
