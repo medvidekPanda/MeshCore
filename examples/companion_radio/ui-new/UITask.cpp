@@ -100,8 +100,10 @@ class HomeScreen : public UIScreen {
 
   void renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
     // Convert millivolts to percentage
+    // Note: Measured under load (during operation), so voltage is lower than no-load voltage
+    // LiPo battery: 4.2V no-load = 100%, but under load drops to ~4.1V even when fully charged
     const int minMilliVolts = 3000; // Minimum voltage (e.g., 3.0V)
-    const int maxMilliVolts = 4200; // Maximum voltage (e.g., 4.2V)
+    const int maxMilliVolts = 4100; // Maximum voltage under load (e.g., 4.1V - full charge under load)
     int batteryPercentage = ((batteryMilliVolts - minMilliVolts) * 100) / (maxMilliVolts - minMilliVolts);
     if (batteryPercentage < 0) batteryPercentage = 0; // Clamp to 0%
     if (batteryPercentage > 100) batteryPercentage = 100; // Clamp to 100%

@@ -524,6 +524,13 @@ For all Xiao S3 WIO variants (repeater and companion), battery voltage measureme
 - Voltage multiplier: 2x (due to 1/2 divider)
 - Based on `analogReadMilliVolts()` with 12-bit ADC resolution
 
+**Battery percentage calculation:**
+
+- Measurements are taken during device operation (under load), so voltage is lower than no-load voltage
+- Battery percentage is calculated using: 3000mV (0%) to 4100mV (100%)
+- LiPo batteries: 4.2V no-load = 100%, but under load (during TX/RX) voltage drops to ~4.1V even when fully charged
+- The 4100mV maximum accounts for voltage sag under load, providing more accurate battery percentage readings
+
 ## Notes
 
 - **MQTT Bridge**: Requires WiFi connection and functional MQTT broker
@@ -546,6 +553,7 @@ _Firmware version: battery-test branch (DEV)_
 
 **Changes**:
 
+- **Battery percentage calculation updated for load conditions** - Maximum voltage changed from 4200mV (4.2V no-load) to 4100mV (4.1V under load) to account for voltage sag during operation. LiPo batteries under load show ~4.1V even when fully charged, so this provides more accurate percentage readings.
 - Added automatic battery voltage measurement every 1 hour (3600 seconds) in `low_sleep` variant
 - Battery measurement happens on light sleep timeout wakeup (safety watchdog)
 - Measurement uses A0 pin (GPIO 1) with 1/2 voltage divider as per Seeed Studio wiki
@@ -582,3 +590,5 @@ _Firmware version: battery-test branch (DEV)_
 - `variants/xiao_s3_wio/XiaoS3WIOBoard.h` - Battery voltage measurement implementation (GPIO 1)
 - `variants/xiao_s3_wio/platformio.ini` - PIN_VBAT_READ=1 configuration
 - `examples/simple_repeater/main.cpp` - Light sleep with 1-hour timeout, immediate packet processing, USB detection fix
+- `examples/companion_radio/ui-orig/UITask.cpp` - Battery percentage calculation updated to 4100mV max (under load)
+- `examples/companion_radio/ui-new/UITask.cpp` - Battery percentage calculation updated to 4100mV max (under load)
