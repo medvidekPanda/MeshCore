@@ -232,4 +232,16 @@ public:
     bridge.begin();
   }
 #endif
+
+#ifdef ESP_PLATFORM
+  void setWifiState(bool enable) override {
+    _prefs.wifi_enabled = enable;
+    // WiFi state will be applied on next reboot
+  }
+
+  void setBtState(bool enable) override {
+    _prefs.bt_enabled = enable;
+    // BT state will be applied on next reboot
+  }
+#endif
 };

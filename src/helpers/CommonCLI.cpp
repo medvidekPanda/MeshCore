@@ -72,6 +72,16 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     file.read((uint8_t *)&_prefs->discovery_mod_timestamp, sizeof(_prefs->discovery_mod_timestamp)); // 162
     file.read((uint8_t *)&_prefs->adc_multiplier, sizeof(_prefs->adc_multiplier)); // 166
     // 170
+    
+    // Try to read wifi_enabled and bt_enabled (new fields, may not exist in old files)
+    if (file.available() >= 2) {
+      file.read((uint8_t *)&_prefs->wifi_enabled, sizeof(_prefs->wifi_enabled)); // 170
+      file.read((uint8_t *)&_prefs->bt_enabled, sizeof(_prefs->bt_enabled));     // 171
+    } else {
+      // Old file format, default to disabled
+      _prefs->wifi_enabled = 0;
+      _prefs->bt_enabled = 0;
+    }
 
     // sanitise bad pref values
     _prefs->rx_delay_base = constrain(_prefs->rx_delay_base, 0, 20.0f);
@@ -95,6 +105,9 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
 
     _prefs->gps_enabled = constrain(_prefs->gps_enabled, 0, 1);
     _prefs->advert_loc_policy = constrain(_prefs->advert_loc_policy, 0, 2);
+    
+    _prefs->wifi_enabled = constrain(_prefs->wifi_enabled, 0, 1);
+    _prefs->bt_enabled = constrain(_prefs->bt_enabled, 0, 1);
 
     file.close();
   }
@@ -152,6 +165,8 @@ void CommonCLI::savePrefs(FILESYSTEM* fs) {
     file.write((uint8_t *)&_prefs->discovery_mod_timestamp, sizeof(_prefs->discovery_mod_timestamp)); // 162
     file.write((uint8_t *)&_prefs->adc_multiplier, sizeof(_prefs->adc_multiplier));                 // 166
     // 170
+    file.write((uint8_t *)&_prefs->wifi_enabled, sizeof(_prefs->wifi_enabled));                     // 170
+    file.write((uint8_t *)&_prefs->bt_enabled, sizeof(_prefs->bt_enabled));                        // 171
 
     file.close();
   }
@@ -341,6 +356,12 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
         } else {
           sprintf(reply, "> %.3f", adc_mult);
         }
+#ifdef ESP_PLATFORM
+      } else if (memcmp(config, "wifi", 4) == 0) {
+        sprintf(reply, "> %s", _prefs->wifi_enabled ? "on" : "off");
+      } else if (memcmp(config, "bt", 2) == 0) {
+        sprintf(reply, "> %s", _prefs->bt_enabled ? "on" : "off");
+#endif
       } else {
         sprintf(reply, "??: %s", config);
       }
@@ -546,6 +567,18 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
           _prefs->adc_multiplier = 0.0f;
           strcpy(reply, "Error: unsupported by this board");
         };
+#ifdef ESP_PLATFORM
+      } else if (memcmp(config, "wifi ", 5) == 0) {
+        _prefs->wifi_enabled = memcmp(&config[5], "on", 2) == 0;
+        savePrefs();
+        _callbacks->setWifiState(_prefs->wifi_enabled);
+        strcpy(reply, _prefs->wifi_enabled ? "OK - WiFi enabled (reboot to apply)" : "OK - WiFi disabled (reboot to apply)");
+      } else if (memcmp(config, "bt ", 3) == 0) {
+        _prefs->bt_enabled = memcmp(&config[3], "on", 2) == 0;
+        savePrefs();
+        _callbacks->setBtState(_prefs->bt_enabled);
+        strcpy(reply, _prefs->bt_enabled ? "OK - BT enabled (reboot to apply)" : "OK - BT disabled (reboot to apply)");
+#endif
       } else {
         sprintf(reply, "unknown config: %s", config);
       }
