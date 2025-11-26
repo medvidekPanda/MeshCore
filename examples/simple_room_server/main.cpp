@@ -1,6 +1,10 @@
 #include <Arduino.h>   // needed for PlatformIO
 #include <Mesh.h>
 
+#ifdef WITH_MQTT_BRIDGE
+  #include <WiFi.h>
+#endif
+
 #include "MyMesh.h"
 
 #ifdef DISPLAY_CLASS
@@ -69,6 +73,29 @@ void setup() {
   command[0] = 0;
 
   sensors.begin();
+
+#ifdef WITH_MQTT_BRIDGE
+  #ifdef WIFI_SSID
+    Serial.print("Connecting to WiFi for MQTT: ");
+    Serial.println(WIFI_SSID);
+    WiFi.begin(WIFI_SSID, WIFI_PWD);
+    int wifi_timeout = 0;
+    while (WiFi.status() != WL_CONNECTED && wifi_timeout < 20) {
+      delay(500);
+      Serial.print(".");
+      wifi_timeout++;
+    }
+    Serial.println();
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.print("WiFi connected! IP: ");
+      Serial.println(WiFi.localIP());
+    } else {
+      Serial.println("WiFi connection failed! MQTT bridge will not work.");
+    }
+  #else
+    #error "WIFI_SSID must be defined for MQTT bridge"
+  #endif
+#endif
 
   the_mesh.begin(fs);
 

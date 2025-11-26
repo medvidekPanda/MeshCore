@@ -14,3 +14,7 @@ cmake-*
 .cache
 .ccls
 compile_commands.json
+
+; Private configuration files with credentials
+**/platformio.private.ini
+variants/**/platformio.private.ini

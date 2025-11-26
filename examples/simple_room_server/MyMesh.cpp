@@ -201,6 +201,11 @@ void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
 }
 
 void MyMesh::logRx(mesh::Packet *pkt, int len, float score) {
+#ifdef WITH_MQTT_BRIDGE
+  if (_prefs.bridge_enabled && _prefs.bridge_pkt_src == 1) { // 1 = logRx
+    bridge.sendPacket(pkt);
+  }
+#endif
   if (_logging) {
     File f = openAppend(PACKET_LOG_FILE);
     if (f) {
@@ -220,6 +225,11 @@ void MyMesh::logRx(mesh::Packet *pkt, int len, float score) {
   }
 }
 void MyMesh::logTx(mesh::Packet *pkt, int len) {
+#ifdef WITH_MQTT_BRIDGE
+  if (_prefs.bridge_enabled && _prefs.bridge_pkt_src == 0) { // 0 = logTx
+    bridge.sendPacket(pkt);
+  }
+#endif
   if (_logging) {
     File f = openAppend(PACKET_LOG_FILE);
     if (f) {
@@ -587,7 +597,11 @@ void MyMesh::onAckRecv(mesh::Packet *packet, uint32_t ack_crc) {
 MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondClock &ms, mesh::RNG &rng,
                mesh::RTCClock &rtc, mesh::MeshTables &tables)
     : mesh::Mesh(radio, ms, rng, rtc, *new StaticPoolPacketManager(32), tables),
-      _cli(board, rtc, sensors, &_prefs, this), telemetry(MAX_PACKET_PAYLOAD - 4) {
+      _cli(board, rtc, sensors, &_prefs, this), telemetry(MAX_PACKET_PAYLOAD - 4)
+#ifdef WITH_MQTT_BRIDGE
+      , bridge(&_prefs, _mgr, &rtc)
+#endif
+{
   last_millis = 0;
   uptime_millis = 0;
   next_local_advert = next_flood_advert = 0;
@@ -624,6 +638,12 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   _prefs.gps_interval = 0;
   _prefs.advert_loc_policy = ADVERT_LOC_PREFS;
 
+  // bridge defaults
+#ifdef WITH_MQTT_BRIDGE
+  _prefs.bridge_enabled = 1;    // enabled
+  _prefs.bridge_pkt_src = 0;    // logTx
+#endif
+
   next_post_idx = 0;
   next_client_idx = 0;
   next_push = 0;
@@ -638,6 +658,12 @@ void MyMesh::begin(FILESYSTEM *fs) {
   _cli.loadPrefs(_fs);
 
   acl.load(_fs);
+
+#ifdef WITH_MQTT_BRIDGE
+  if (_prefs.bridge_enabled) {
+    bridge.begin();
+  }
+#endif
 
   radio_set_params(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
   radio_set_tx_power(_prefs.tx_power_dbm);
@@ -888,4 +914,10 @@ void MyMesh::loop() {
   uint32_t now = millis();
   uptime_millis += now - last_millis;
   last_millis = now;
+
+#ifdef WITH_MQTT_BRIDGE
+  if (_prefs.bridge_enabled) {
+    bridge.loop();
+  }
+#endif
 }

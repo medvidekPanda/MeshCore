@@ -23,6 +23,10 @@ class SerialWifiInterface : public BaseSerialInterface {
   int send_queue_len;
   Frame send_queue[FRAME_QUEUE_SIZE];
 
+  uint8_t _recv_state;
+  uint16_t _frame_len;
+  uint16_t rx_len;
+
   void clearBuffers() { recv_queue_len = 0; send_queue_len = 0; }
 
 protected:
@@ -33,6 +37,9 @@ public:
     _isEnabled = false;
     _last_write = 0;
     send_queue_len = recv_queue_len = 0;
+    _recv_state = 0;
+    _frame_len = 0;
+    rx_len = 0;
   }
 
   void begin(int port);
