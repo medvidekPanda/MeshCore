@@ -42,6 +42,8 @@ public:
   void resetAGC() override;
 
   void loop() override;
+  void forcePacketReady();
+  void reinitInterrupts();  // Re-initialize interrupt handler after light sleep
 
   uint32_t getPacketsRecv() const { return n_recv; }
   uint32_t getPacketsSent() const { return n_sent; }

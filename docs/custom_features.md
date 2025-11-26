@@ -6,6 +6,7 @@ This document describes custom changes added to MeshCore firmware that are not p
 
 1. [MQTT Bridge for Room Server](#mqtt-bridge-for-room-server)
 2. [WiFi and Bluetooth CLI Control](#wifi-and-bluetooth-cli-control)
+3. [Light Sleep for Ultra-Low Power](#light-sleep-variant)
 
 ---
 
@@ -196,11 +197,67 @@ Disabling WiFi and BT can significantly reduce power consumption:
 
 For maximum savings, use build variant `Xiao_S3_WIO_repeater_lowpower`, which has WiFi and BT disabled by default.
 
+### Super Low Power Variant
+
+For maximum power savings, use `Xiao_S3_WIO_repeater_super_lowpower`. This variant:
+1.  Inherits from `lowpower` (WiFi/BT disabled).
+2.  **Underclocks CPU to 80MHz** (standard is 240MHz).
+3.  **Disables Status LED** blinking logic.
+
+This configuration significantly reduces the active current consumption of the device.
+
+```ini
+[env:Xiao_S3_WIO_repeater_super_lowpower]
+extends = env:Xiao_S3_WIO_repeater_lowpower
+board_build.f_cpu = 80000000L
+build_flags =
+  ${env:Xiao_S3_WIO_repeater_lowpower.build_flags}
+  -D PIN_STATUS_LED=RADIOLIB_NC
+```
+
+### Light Sleep Variant
+
+For ultra-low power consumption with fast wakeup, use `Xiao_S3_WIO_repeater_low_sleep`. This variant:
+1. Inherits from `lowpower` (WiFi/BT disabled).
+2. **Implements light sleep mode** - device enters light sleep after 5 seconds of inactivity.
+3. **GPIO wakeup** - wakes up automatically when LoRa packet is received (DIO1 interrupt).
+4. **Fast wakeup** - light sleep allows radio to stay in RX mode, enabling faster response than deep sleep.
+
+**Key features:**
+- Device enters light sleep after 5 seconds of inactivity
+- Automatically wakes up on incoming LoRa packet
+- Radio stays in RX mode during sleep (unlike deep sleep)
+- Interrupt handler is properly managed to prevent conflicts
+- Minimal power consumption while maintaining fast response
+
+**Power consumption:**
+- Light sleep: ~5-15mA (depends on radio module)
+- Active mode: ~50-100mA
+- Significant savings compared to always-active mode
+
+**Technical implementation:**
+- GPIO interrupt handler is removed before sleep to prevent conflicts
+- GPIO wakeup is configured for DIO1 pin (LoRa packet detection)
+- After wakeup, RadioLib interrupt handler is re-initialized
+- Serial output is minimized to reduce power consumption
+
+```ini
+[env:Xiao_S3_WIO_repeater_low_sleep]
+extends = env:Xiao_S3_WIO_repeater_lowpower
+build_flags =
+  ${env:Xiao_S3_WIO_repeater_lowpower.build_flags}
+  -D ENABLE_LIGHT_SLEEP
+  ; Optional: set timeout for light sleep (in seconds)
+  ; -D LIGHT_SLEEP_TIMEOUT=60
+```
+
+**Note**: If `LIGHT_SLEEP_TIMEOUT` is not defined, device will sleep indefinitely until a packet is received.
+
 ### Usage Example
 
-1. **Upload firmware** with lowpower variant:
+1. **Upload firmware** with super lowpower variant:
    ```bash
-   pio run -e Xiao_S3_WIO_repeater_lowpower -t upload
+   pio run -e Xiao_S3_WIO_repeater_super_lowpower -t upload
    ```
 
 2. **Check status**:
@@ -222,6 +279,13 @@ For maximum savings, use build variant `Xiao_S3_WIO_repeater_lowpower`, which ha
    set wifi off
    reboot
    ```
+
+5. **Use light sleep variant** (for ultra-low power with fast wakeup):
+   ```bash
+   pio run -e Xiao_S3_WIO_repeater_low_sleep -t upload
+   ```
+   
+   Device will automatically enter light sleep after 5 seconds of inactivity and wake up on incoming packets.
 
 ### Technical Details
 
@@ -261,6 +325,11 @@ Default values:
 - `examples/simple_repeater/MyMesh.cpp` - Repeater MyMesh implementation
 - `examples/simple_repeater/main.cpp` - Repeater main with conditional initialization
 - `variants/xiao_s3_wio/platformio.ini` - Build configuration
+
+### Light Sleep
+- `variants/xiao_s3_wio/XiaoS3WIOBoard.h` - Light sleep implementation for ESP32-S3
+- `src/helpers/radiolib/RadioLibWrappers.h/cpp` - RadioLib wrapper with interrupt reinitialization
+- `examples/simple_repeater/main.cpp` - Light sleep integration in repeater
 
 ---
 
@@ -306,6 +375,31 @@ Default values:
 - `examples/simple_repeater/MyMesh.h/cpp` - Repeater integration
 - `examples/simple_repeater/main.cpp` - Conditional initialization
 - `variants/xiao_s3_wio/platformio.ini` - Lowpower variant
+
+### Uncommitted changes: Light Sleep for Ultra-Low Power
+
+**Status**: Implemented and tested
+
+**Changes**:
+- Added light sleep implementation for ESP32-S3 (`XiaoS3WIOBoard.h`)
+- GPIO wakeup support for LoRa packet detection (DIO1 pin)
+- Interrupt handler management (remove before sleep, reinit after wakeup)
+- RadioLib interrupt reinitialization method (`reinitInterrupts()`)
+- Light sleep variant `Xiao_S3_WIO_repeater_low_sleep`
+- Automatic sleep after 5 seconds of inactivity
+- Fast wakeup on incoming LoRa packets
+- Minimal Serial output to reduce power consumption
+
+**Power savings**:
+- Light sleep: ~5-15mA (vs ~50-100mA active)
+- Radio stays in RX mode during sleep
+- Fast response time compared to deep sleep
+
+**Files**:
+- `variants/xiao_s3_wio/XiaoS3WIOBoard.h` - Light sleep implementation
+- `src/helpers/radiolib/RadioLibWrappers.h/cpp` - Interrupt reinitialization
+- `examples/simple_repeater/main.cpp` - Light sleep integration
+- `variants/xiao_s3_wio/platformio.ini` - Light sleep variant
 
 ---
 
