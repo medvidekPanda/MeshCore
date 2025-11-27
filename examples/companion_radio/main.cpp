@@ -332,19 +332,40 @@ void setup() {
       sendSensorDataToChannel(telemetry);
       
       // Wait for data to be sent - call loop() repeatedly to process mesh operations
-      // This ensures the message is actually transmitted before entering deep sleep
+      // This ensures the message is actually transmitted (ACK window)
       unsigned long start_wait = millis();
       while (millis() - start_wait < 5000) {  // Wait 5 seconds for transmission
         the_mesh.loop(); // Process mesh operations to send queued messages
         sensors.loop();
         rtc_clock.tick();
-        delay(100); // Small delay to prevent tight loop
+        delay(50); // Small delay to prevent tight loop
       }
       
       // Final loops to ensure all operations complete and message is sent
       for (int i = 0; i < 10; i++) {
         the_mesh.loop();
-        delay(100);
+        delay(50);
+      }
+      
+      // PAK prodluž receive o dalších 10-15 sekund → radio je v receive módu → chytí advert
+      // This is crucial for time synchronization from advert packets
+      unsigned long listen_start = millis();
+      const unsigned long EXTRA_LISTEN_TIME = 10000;  // 10 sekund navíc
+      uint32_t prev_time = rtc_clock.getCurrentTime();
+      
+      while (millis() - listen_start < EXTRA_LISTEN_TIME) {
+        the_mesh.loop();           // radio je v receive → chytí advert
+        sensors.loop();
+        rtc_clock.tick();
+        
+        // Check if time was synchronized (indicates advert was received)
+        uint32_t now = rtc_clock.getCurrentTime();
+        if (now > prev_time + 10) { // čas skočil → byl přijat advert
+          // Time synced from advert, can exit early
+          break;
+        }
+        prev_time = now;
+        delay(50);
       }
     #else
       // No SENSOR_CHANNEL_NAME defined - skip sending but continue to deep sleep
