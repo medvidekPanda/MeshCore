@@ -7,6 +7,9 @@ This document describes custom changes added to MeshCore firmware that are not p
 1. [MQTT Bridge for Room Server](#mqtt-bridge-for-room-server)
 2. [WiFi and Bluetooth CLI Control](#wifi-and-bluetooth-cli-control)
 3. [Light Sleep for Ultra-Low Power](#light-sleep-variant)
+4. [Companion Radio with Light Sleep and Environmental Sensors](#companion-radio-with-light-sleep-and-environmental-sensors)
+5. [Companion Radio with Deep Sleep for Ultra-Low Power](#companion-radio-with-deep-sleep-for-ultra-low-power)
+6. [USB Serial Configuration (When Bluetooth is Disabled)](#usb-serial-configuration-when-bluetooth-is-disabled)
 
 ---
 
@@ -314,6 +317,10 @@ build_flags =
   -D PIN_STATUS_LED=RADIOLIB_NC
   ; Debug mode: 1 minute sensor reading interval
   -D DEBUG_SENSOR_READ=1
+  ; Optional: Enable Bluetooth in debug mode (for USB-powered development)
+  ; In debug mode, device is usually USB-powered, so power consumption is less critical
+  ; For production/external use, remove BLE_PIN_CODE to disable BT and save power
+  ; -D BLE_PIN_CODE=123456
   ; Production mode: 30 minute sensor reading interval (remove DEBUG_SENSOR_READ)
 ```
 
@@ -373,7 +380,251 @@ The BMP280 sensor can use either I2C address 0x76 or 0x77 depending on the solde
      -D DISABLE_WIFI_OTA=1
      -D PIN_STATUS_LED=RADIOLIB_NC
      ; 30-minute interval (default when DEBUG_SENSOR_READ is not defined)
+     ; Note: BLE_PIN_CODE should NOT be defined for production to save power
    ```
+
+4. **Enable Bluetooth in debug mode** (optional, for USB-powered development):
+
+   When developing and testing with USB power, you can enable Bluetooth for easier configuration:
+
+   ```ini
+   build_flags =
+     ${Xiao_S3_WIO.build_flags}
+     -D ENABLE_LIGHT_SLEEP=1
+     -D DISABLE_WIFI_OTA=1
+     -D PIN_STATUS_LED=RADIOLIB_NC
+     -D DEBUG_SENSOR_READ=1
+     ; Enable Bluetooth for debug (device usually USB-powered)
+     -D BLE_PIN_CODE=123456
+   ```
+
+   **Important:**
+
+   - Bluetooth increases power consumption (~5-20mA)
+   - In debug mode, device is usually USB-powered, so this is acceptable
+   - For production/external battery use, **remove** `BLE_PIN_CODE` to disable BT and save power
+   - Light sleep will still work, but BT will consume additional power
+
+5. **Send sensor data to private channel** (optional):
+
+   To automatically send sensor readings to a private mesh channel, configure the channel name and PSK:
+
+   ```ini
+   build_flags =
+     ${Xiao_S3_WIO.build_flags}
+     -D ENABLE_LIGHT_SLEEP=1
+     -D DISABLE_WIFI_OTA=1
+     -D PIN_STATUS_LED=RADIOLIB_NC
+     -D DEBUG_SENSOR_READ=1
+     ; Send sensor data to private channel
+     -D SENSOR_CHANNEL_NAME='"SensorData"'
+     -D SENSOR_CHANNEL_PSK='"your-128-bit-psk-base64"'
+   ```
+
+   **Channel Configuration:**
+
+   - `SENSOR_CHANNEL_NAME`: Name of the channel (max 32 characters)
+   - `SENSOR_CHANNEL_PSK`: Pre-shared key (PSK) for the channel in base64 format (128-bit = 16 bytes = 24 base64 characters)
+   - If channel doesn't exist, it will be automatically created with the provided PSK
+   - Sensor data is sent as `PAYLOAD_TYPE_GRP_DATA` packets containing CayenneLPP telemetry
+
+   **Data Format:**
+
+   - Each packet contains: 4-byte timestamp + CayenneLPP telemetry data
+   - Data is encrypted with the channel's PSK
+   - All devices with the same channel name and PSK can receive the data
+
+   **Receiving Data:**
+
+   - Use MeshCore client app (Android/iOS/Web) to subscribe to the channel
+   - Or use another companion radio/repeater configured with the same channel
+   - Data will appear as group data messages on the channel
+
+### Companion Radio with Deep Sleep for Ultra-Low Power
+
+For companion radio devices that need **ultra-low power consumption** (< 1mA vs ~80mA for light sleep), use `Xiao_S3_WIO_companion_radio_deep_sleep`. This variant:
+
+1. **Implements deep sleep mode** - device enters deep sleep and wakes up only on timer (for sensor reading)
+2. **WiFi and Bluetooth disabled** - `DISABLE_WIFI_OTA=1` and no `BLE_PIN_CODE` to save power
+3. **Status LED disabled** - `PIN_STATUS_LED=RADIOLIB_NC` to minimize power consumption
+4. **Periodic sensor reading** - automatically reads environmental sensors at configurable intervals (30 minutes default)
+5. **Device reset on wakeup** - deep sleep causes full reset, wakeup reason is handled in `setup()`
+
+**Key differences from light sleep:**
+
+- **Much lower power consumption**: < 1mA in deep sleep vs ~80mA in light sleep
+- **Radio is powered off** during deep sleep (cannot receive packets)
+- **Device resets on wakeup** - all state is lost, wakeup reason is detected in `setup()`
+- **Only timer wakeup** - device wakes up periodically for sensor reading, not on LoRa packets
+- **Ideal for battery-powered sensors** that need to operate for months on battery
+
+**Configuration:**
+
+```ini
+[env:Xiao_S3_WIO_companion_radio_deep_sleep]
+extends = env:Xiao_S3_WIO_companion_radio_deep_sleep_base
+build_flags =
+  ${env:Xiao_S3_WIO_companion_radio_deep_sleep_base.build_flags}
+  -D ENABLE_DEEP_SLEEP=1
+  -D SENSOR_READ_INTERVAL_SECS=1800  ; 30 minutes
+  ; Optional: Enable sensor debug logging
+  ; -D SENSOR_DEBUG=1
+```
+
+**Private configuration** (in `platformio.private.ini`):
+
+```ini
+[env:Xiao_S3_WIO_companion_radio_deep_sleep]
+extends = env:Xiao_S3_WIO_companion_radio_deep_sleep_base
+build_flags =
+  ${env:Xiao_S3_WIO_companion_radio_deep_sleep_base.build_flags}
+  ; Sensor channel configuration (private)
+  -D SENSOR_CHANNEL_NAME='"fogll-mesh-senzor"'
+  -D SENSOR_CHANNEL_PSK='"your-128-bit-psk-base64"'
+```
+
+**Wakeup behavior:**
+
+- Device wakes up from deep sleep after `SENSOR_READ_INTERVAL_SECS` (default: 1800 seconds = 30 minutes)
+- On wakeup, device performs full reset
+- `setup()` detects wakeup reason using `esp_reset_reason() == ESP_RST_DEEPSLEEP`
+- Sensors are read immediately after wakeup
+- Sensor data is sent to mesh channel (if configured)
+- After sending, device waits 5 seconds (or 30 seconds on first startup) then enters deep sleep again
+
+**Power consumption:**
+
+- **Deep sleep**: 
+  - ESP32-S3 module alone: ~8-20 µA (only RTC and wakeup timer active)
+  - XIAO ESP32S3 development board: ~2-8 mA (due to power LED, voltage regulator, USB-Serial chip)
+  - Note: Development board components (power LED, voltage regulator) cannot be disabled via software
+- **Active mode** (sensor reading + transmission): ~50-100mA
+- **Active duration**: ~5-30 seconds per cycle (depending on startup vs wakeup)
+- **Average power**: ~0.1-0.5mA (depending on sensor reading interval)
+
+**Usage Example:**
+
+1. **Upload firmware** with companion radio deep sleep variant:
+
+   ```bash
+   pio run -e Xiao_S3_WIO_companion_radio_deep_sleep -t upload --upload-port /dev/cu.usbmodem11301
+   ```
+
+2. **Monitor sensor readings** via Serial (device will reset on each wakeup):
+
+   ```
+   [SENSOR] Wakeup from deep sleep
+   [SENSOR] Reading sensors (interval: 1800 secs)
+     [CH1] Voltage: 1.150 V
+     [CH1] Temperature: 27.20°C
+     [CH1] Humidity: 46.50%
+     [CH1] Pressure: 1013.25 hPa
+     [CH1] Altitude: 150.00 m
+   [SENSOR] Sensor reading complete
+   [SENSOR] Entering deep sleep for 1800 seconds...
+   ```
+
+3. **Debug mode** (disables deep sleep, enables more frequent sensor reads):
+
+   To enable debug mode, uncomment `MESH_DEBUG=1` in the base configuration:
+
+   ```ini
+   build_flags =
+     ${env:Xiao_S3_WIO_companion_radio_deep_sleep_base.build_flags}
+     -D ENABLE_DEEP_SLEEP=1
+     -D SENSOR_READ_INTERVAL_SECS=60  ; 1 minute for debug
+     -D MESH_DEBUG=1  ; Disables deep sleep, enables BT
+   ```
+
+   **Note**: When `MESH_DEBUG=1` is set, deep sleep is automatically disabled and device operates in normal mode with Bluetooth enabled.
+
+4. **Send sensor data to private channel** (configure in `platformio.private.ini`):
+
+   See [Companion Radio with Light Sleep](#companion-radio-with-light-sleep-and-environmental-sensors) section for channel configuration details.
+
+**Important notes:**
+
+- **Deep sleep resets the device** - all RAM is lost, only RTC memory is preserved
+- **Radio cannot receive packets** during deep sleep - device only wakes up on timer
+- **First startup** (not from deep sleep): device waits 30 seconds before entering deep sleep
+- **Wakeup from deep sleep**: device waits 5 seconds before entering deep sleep again
+- **USB connection**: If USB is connected, device may not enter deep sleep (depends on board implementation)
+- **Battery voltage**: Measured and included in sensor telemetry on each wakeup
+
+### USB Serial Configuration (When Bluetooth is Disabled)
+
+When Bluetooth is disabled (no `BLE_PIN_CODE` defined), companion radio automatically uses **USB Serial** for configuration and communication.
+
+**How it works:**
+
+1. **Automatic USB Serial Interface:**
+
+   - If `BLE_PIN_CODE` is not defined, companion radio uses `ArduinoSerialInterface` with `Serial` (USB)
+   - On ESP32-S3, `Serial` uses USB-Serial-JTAG, so USB connection works automatically
+   - Baud rate: 115200
+
+2. **Light Sleep Behavior:**
+
+   - Device detects Serial activity (`Serial.available()`)
+   - When Serial commands are received, device stays awake (resets `last_activity` timer)
+   - This prevents light sleep while you're configuring the device via USB
+
+3. **Configuration Methods:**
+
+   **A. Via MeshCore Client Protocol:**
+
+   - Connect via USB Serial (e.g., using `picocom`, `screen`, or Serial Monitor)
+   - Use binary frame protocol (same as BLE/WiFi clients)
+   - All standard companion radio commands are available
+
+   **B. Via CLI Rescue Mode:**
+
+   - Basic CLI commands available directly via Serial:
+     - `set pin <6-digit-pin>` - Set BLE PIN (for future use)
+     - `rebuild` - Format filesystem
+     - `reboot` - Reboot device
+     - `ls` - List files
+     - `cat <path>` - Display file contents
+     - `rm <path>` - Remove file
+
+4. **Connecting via USB:**
+
+   **Linux/macOS:**
+
+   ```bash
+   # Using picocom (recommended)
+   picocom -b 115200 /dev/ttyUSB0 --imap lfcrlf
+
+   # Or using screen
+   screen /dev/ttyUSB0 115200
+
+   # Or using cat (read-only)
+   cat /dev/ttyUSB0
+   ```
+
+   **Windows:**
+
+   - Use PuTTY, Tera Term, or Arduino Serial Monitor
+   - Port: COM port (e.g., COM3)
+   - Baud rate: 115200
+
+5. **Example Usage:**
+
+   ```bash
+   # Connect to device
+   picocom -b 115200 /dev/ttyUSB0 --imap lfcrlf
+
+   # In CLI rescue mode, you can use:
+   set pin 123456
+   rebuild
+   reboot
+   ```
+
+6. **Important Notes:**
+   - USB Serial works even when `DISABLE_WIFI_OTA=1` is set
+   - Device will stay awake while Serial commands are being sent
+   - For production use, device will enter light sleep when no Serial activity is detected
+   - Serial activity detection prevents light sleep, allowing configuration without interruption
 
 ### Usage Example
 
@@ -685,3 +936,6 @@ _Firmware version: battery-test branch (DEV)_
 - `examples/simple_repeater/main.cpp` - Light sleep with 1-hour timeout, immediate packet processing, USB detection fix
 - `examples/companion_radio/ui-orig/UITask.cpp` - Battery percentage calculation updated to 4100mV max (under load)
 - `examples/companion_radio/ui-new/UITask.cpp` - Battery percentage calculation updated to 4100mV max (under load)
+
+picocom -b 115200 --imap lfcrlf /dev/cu.usbmodem11301
+cat /dev/cu.usbmodem11301
