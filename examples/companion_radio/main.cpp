@@ -303,14 +303,15 @@ void setup() {
   bool is_first_startup = (reason != ESP_RST_DEEPSLEEP);
   
   // On first startup only, wait 30 seconds before sending data
+  // During this time, listen for advert packets to synchronize time with mesh network
   // After deep sleep wakeup, send data immediately without waiting
   if (is_first_startup) {
     unsigned long start_wait = millis();
     while (millis() - start_wait < 30000) {
-      the_mesh.loop();
+      the_mesh.loop(); // Process mesh operations - receives advert packets for time sync
       sensors.loop();
-      rtc_clock.tick();
-      delay(100);
+      rtc_clock.tick(); // Update RTC clock (may be synchronized from advert packets)
+      delay(50); // Smaller delay for more frequent packet processing
     }
   }
   
