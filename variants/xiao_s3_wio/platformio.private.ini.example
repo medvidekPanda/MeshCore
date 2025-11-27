@@ -6,12 +6,28 @@
 extends = env:Xiao_S3_WIO_room_server_mqtt_base
 build_flags =
   ${env:Xiao_S3_WIO_room_server_mqtt_base.build_flags}
-  -D WIFI_SSID='"YOUR_WIFI_SSID"'
-  -D WIFI_PWD='"YOUR_WIFI_PASSWORD"'
-  -D MQTT_BROKER='"YOUR_MQTT_BROKER_IP"'
+  -D WIFI_SSID='"MyWiFiNetwork"'
+  -D WIFI_PWD='"MySecurePassword123"'
+  -D MQTT_BROKER='"192.168.1.100"'
   -D MQTT_PORT=1883
-  -D ADMIN_PASSWORD='"YOUR_ADMIN_PASSWORD"'
-  -D ROOM_PASSWORD='"YOUR_ROOM_PASSWORD"'
-;  -D MQTT_USER='"YOUR_MQTT_USERNAME"'
-;  -D MQTT_PASS='"YOUR_MQTT_PASSWORD"'
+  -D ADMIN_PASSWORD='"admin123"'
+  -D ROOM_PASSWORD='"room456"'
+;  -D MQTT_USER='"mqtt_user"'
+;  -D MQTT_PASS='"mqtt_password"'
+
+[env:Xiao_S3_WIO_companion_radio_deep_sleep]
+extends = env:Xiao_S3_WIO_companion_radio_deep_sleep_base
+build_flags =
+  ${env:Xiao_S3_WIO_companion_radio_deep_sleep_base.build_flags}
+  ; Sensor channel configuration (private)
+  -D SENSOR_CHANNEL_NAME='"my-sensor-channel"'
+  -D SENSOR_CHANNEL_PSK='"aBcDeFgHiJkLmNoPqRsTuVwXyZ123456=="'
+
+[env:Xiao_S3_WIO_sensor_deep_sleep]
+extends = env:Xiao_S3_WIO_sensor_deep_sleep_base
+build_flags =
+  ${env:Xiao_S3_WIO_sensor_deep_sleep_base.build_flags}
+  ; Sensor channel configuration (private)
+  -D SENSOR_CHANNEL_NAME='"my-sensor-channel"'
+  -D SENSOR_CHANNEL_PSK='"aBcDeFgHiJkLmNoPqRsTuVwXyZ123456=="'
 
