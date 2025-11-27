@@ -330,23 +330,30 @@ void setup() {
       the_mesh.loop();
       delay(100);
       sendSensorDataToChannel(telemetry);
+      
+      // Wait for data to be sent - call loop() repeatedly to process mesh operations
+      // This ensures the message is actually transmitted before entering deep sleep
+      unsigned long start_wait = millis();
+      while (millis() - start_wait < 5000) {  // Wait 5 seconds for transmission
+        the_mesh.loop(); // Process mesh operations to send queued messages
+        sensors.loop();
+        rtc_clock.tick();
+        delay(100); // Small delay to prevent tight loop
+      }
+      
+      // Final loops to ensure all operations complete and message is sent
+      for (int i = 0; i < 10; i++) {
+        the_mesh.loop();
+        delay(100);
+      }
+    #else
+      // No SENSOR_CHANNEL_NAME defined - skip sending but continue to deep sleep
+      // Still call loop() a few times to ensure mesh is stable
+      for (int i = 0; i < 5; i++) {
+        the_mesh.loop();
+        delay(100);
+      }
     #endif
-    
-    // Wait for data to be sent - call loop() repeatedly to process mesh operations
-    // This ensures the message is actually transmitted before entering deep sleep
-    unsigned long start_wait = millis();
-    while (millis() - start_wait < 5000) {  // Wait 5 seconds for transmission
-      the_mesh.loop(); // Process mesh operations to send queued messages
-      sensors.loop();
-      rtc_clock.tick();
-      delay(100); // Small delay to prevent tight loop
-    }
-    
-    // Final loops to ensure all operations complete and message is sent
-    for (int i = 0; i < 10; i++) {
-      the_mesh.loop();
-      delay(100);
-    }
     
     // Flush Serial to ensure all data is sent before sleep
     Serial.flush();
