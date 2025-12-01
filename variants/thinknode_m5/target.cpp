@@ -1,7 +1,8 @@
 #include <Arduino.h>
 #include "target.h"
+#include <helpers/sensors/MicroNMEALocationProvider.h>
 
-HeltecV4Board board;
+ThinknodeM5Board board;
 
 #if defined(P_LORA_SCLK)
   static SPIClass spi;
@@ -15,12 +16,11 @@ WRAPPER_CLASS radio_driver(radio, board);
 ESP32RTCClock fallback_clock;
 AutoDiscoverRTCClock rtc_clock(fallback_clock);
 
-#if ENV_INCLUDE_GPS
-  #include <helpers/sensors/MicroNMEALocationProvider.h>
-  MicroNMEALocationProvider nmea = MicroNMEALocationProvider(Serial1);
-  EnvironmentSensorManager sensors = EnvironmentSensorManager(nmea);
+#ifdef ENV_INCLUDE_GPS
+MicroNMEALocationProvider nmea = MicroNMEALocationProvider(Serial1, &rtc_clock);
+EnvironmentSensorManager sensors = EnvironmentSensorManager(nmea);
 #else
-  EnvironmentSensorManager sensors;
+EnvironmentSensorManager sensors = EnvironmentSensorManager();
 #endif
 
 #ifdef DISPLAY_CLASS
@@ -31,8 +31,10 @@ AutoDiscoverRTCClock rtc_clock(fallback_clock);
 bool radio_init() {
   fallback_clock.begin();
   rtc_clock.begin(Wire);
-  
-#if defined(P_LORA_SCLK)
+  pinMode(P_LORA_EN, OUTPUT);
+  digitalWrite(P_LORA_EN, HIGH);
+  #if defined(P_LORA_SCLK)
+  spi.begin(P_LORA_SCLK, P_LORA_MISO, P_LORA_MOSI);
   return radio.std_init(&spi);
 #else
   return radio.std_init();
@@ -42,6 +44,7 @@ bool radio_init() {
 uint32_t radio_get_rng_seed() {
   return radio.random(0x7FFFFFFF);
 }
+
 
 void radio_set_params(float freq, float bw, uint8_t sf, uint8_t cr) {
   radio.setFrequency(freq);
@@ -58,3 +61,4 @@ mesh::LocalIdentity radio_new_identity() {
   RadioNoiseListener rng(radio);
   return mesh::LocalIdentity(&rng);  // create new random identity
 }
+
