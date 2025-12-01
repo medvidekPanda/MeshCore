@@ -261,6 +261,21 @@ bool MyMesh::isAutoAddEnabled() const {
   return (_prefs.manual_add_contacts & 1) == 0;
 }
 
+void MyMesh::onAdvertRecv(mesh::Packet* packet, const mesh::Identity& id, uint32_t timestamp, const uint8_t* app_data, size_t app_data_len) {
+  // Call parent method first to handle normal advert processing
+  BaseChatMesh::onAdvertRecv(packet, id, timestamp, app_data, app_data_len);
+  
+  // Automatic time synchronization from advert packets (only when running as sensor)
+  // Only sync if timestamp is significantly ahead (at least 5 seconds) to avoid frequent small adjustments
+  // This helps sensors stay synchronized with the mesh network
+  #ifdef SENSOR_CHANNEL_NAME
+    uint32_t curr_time = getRTCClock()->getCurrentTime();
+    if (timestamp > curr_time + 5) {  // Only sync if timestamp is at least 5 seconds ahead
+      getRTCClock()->setCurrentTime(timestamp + 1);  // Set time to timestamp + 1 second
+    }
+  #endif
+}
+
 void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path) {
   if (_serial->isConnected()) {
     if (!isAutoAddEnabled() && is_new) {
@@ -1618,7 +1633,6 @@ void MyMesh::handleCmdFrame(size_t len) {
 void MyMesh::enterCLIRescue() {
   _cli_rescue = true;
   cli_command[0] = 0;
-  Serial.println("========= CLI Rescue =========");
 }
 
 void MyMesh::checkCLIRescueCmd() {
@@ -1629,7 +1643,6 @@ void MyMesh::checkCLIRescueCmd() {
       cli_command[len++] = c;
       cli_command[len] = 0;
     }
-    Serial.print(c);  // echo
   }
   if (len == sizeof(cli_command)-1) {  // command buffer full
     cli_command[sizeof(cli_command)-1] = '\r';
@@ -1643,9 +1656,6 @@ void MyMesh::checkCLIRescueCmd() {
       if (memcmp(config, "pin ", 4) == 0) {
         _prefs.ble_pin = atoi(&config[4]);
         savePrefs();
-        Serial.printf("  > pin is now %06d\n", _prefs.ble_pin);
-      } else {
-        Serial.printf("  Error: unknown config: %s\n", config);
       }
     } else if (strcmp(cli_command, "rebuild") == 0) {
       bool success = _store->formatFileSystem();
@@ -1654,17 +1664,9 @@ void MyMesh::checkCLIRescueCmd() {
         savePrefs();
         saveContacts();
         saveChannels();
-        Serial.println("  > erase and rebuild done");
-      } else {
-        Serial.println("  Error: erase failed");
       }
     } else if (strcmp(cli_command, "erase") == 0) {
-      bool success = _store->formatFileSystem();
-      if (success) {
-        Serial.println("  > erase done");
-      } else {
-        Serial.println("  Error: erase failed");
-      }
+      _store->formatFileSystem();
     } else if (memcmp(cli_command, "ls", 2) == 0) {
 
       // get path from command e.g: "ls /adafruit"
@@ -1677,7 +1679,6 @@ void MyMesh::checkCLIRescueCmd() {
         path += 7; // skip "ExtraFS"
         is_fs2 = true;
       }
-      Serial.printf("Listing files in %s\n", path);
 
       // log each file and directory
       File root = _store->openRead(path);
@@ -1685,11 +1686,6 @@ void MyMesh::checkCLIRescueCmd() {
         if (root) {
           File file = root.openNextFile();
           while (file) {
-            if (file.isDirectory()) {
-              Serial.printf("[dir]  UserData%s/%s\n", path, file.name());
-            } else {
-              Serial.printf("[file] UserData%s/%s (%d bytes)\n", path, file.name(), file.size());
-            }
             // move to next file
             file = root.openNextFile();
           }
@@ -1702,11 +1698,6 @@ void MyMesh::checkCLIRescueCmd() {
           File root2 = _store->openRead(_store->getSecondaryFS(), path);
           File file = root2.openNextFile();
           while (file) {
-            if (file.isDirectory()) {
-              Serial.printf("[dir]  ExtraFS%s/%s\n", path, file.name());
-            } else {
-              Serial.printf("[file] ExtraFS%s/%s (%d bytes)\n", path, file.name(), file.size());
-            }
             // move to next file
             file = root2.openNextFile();
           }
@@ -1725,7 +1716,6 @@ void MyMesh::checkCLIRescueCmd() {
         path += 7; // skip "ExtraFS"
         is_fs2 = true;
       } else {
-        Serial.println("Invalid path provided, must start with UserData/ or ExtraFS/");
         cli_command[0] = 0;
         return;
       }
@@ -1736,18 +1726,7 @@ void MyMesh::checkCLIRescueCmd() {
         file = _store->openRead(_store->getSecondaryFS(), path);
       }
       if(file){
-
-        // get file content
-        int file_size = file.available();
-        uint8_t buffer[file_size];
-        file.read(buffer, file_size);
-
-        // print hex
-        mesh::Utils::printHex(Serial, buffer, file_size);
-        Serial.print("\n");
-
         file.close();
-
       }
 
     } else if (memcmp(cli_command, "rm ", 3) == 0) {
@@ -1756,7 +1735,7 @@ void MyMesh::checkCLIRescueCmd() {
       MESH_DEBUG_PRINTLN("Removing file: %s", path);
       // ensure path is not empty, or root dir
       if(!path || strlen(path) == 0 || strcmp(path, "/") == 0){
-        Serial.println("Invalid path provided");
+        // Invalid path
       } else {
       bool is_fs2 = false;
       if (memcmp(path, "UserData/", 9) == 0) {
@@ -1767,26 +1746,16 @@ void MyMesh::checkCLIRescueCmd() {
       }
 
         // remove file
-        bool removed;
         if (is_fs2) {
-          MESH_DEBUG_PRINTLN("Removing file from ExtraFS: %s", path);
-          removed = _store->removeFile(_store->getSecondaryFS(), path);
+          _store->removeFile(_store->getSecondaryFS(), path);
         } else {
-          MESH_DEBUG_PRINTLN("Removing file from UserData: %s", path);
-          removed = _store->removeFile(path);
-        }
-        if(removed){
-          Serial.println("File removed");
-        } else {
-          Serial.println("Failed to remove file");
+          _store->removeFile(path);
         }
 
       }
 
     } else if (strcmp(cli_command, "reboot") == 0) {
       board.reboot();  // doesn't return
-    } else {
-      Serial.println("  Error: unknown command");
     }
 
     cli_command[0] = 0;  // reset command buffer

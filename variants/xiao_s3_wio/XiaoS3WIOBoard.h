@@ -4,6 +4,11 @@
 #include <helpers/ESP32Board.h>
 #include <esp_sleep.h>
 #include <driver/gpio.h>
+#ifdef ESP_PLATFORM
+  #include <WiFi.h>
+  #include <esp_bt.h>
+  #include <esp_task_wdt.h>
+#endif
 
 class XiaoS3WIOBoard : public ESP32Board {
 public:
@@ -47,26 +52,78 @@ public:
     // and startup_reason is set there directly
   }
 
-  void enterDeepSleep(uint32_t secs, int pin_wake_btn = -1) {
+  void enterDeepSleep(uint32_t secs, int pin_wake_btn = -1, bool enable_radio_wakeup = true) {
     // ESP32-S3: Use ext0 wakeup for DIO1 (works with any GPIO pin)
-    gpio_num_t wakeup_pin = (gpio_num_t)P_LORA_DIO_1;
+    // For sensor-only mode, disable radio wakeup to save power
     
-    if (pin_wake_btn >= 0) {
-      // If user button is specified, use it instead (only one pin supported by ext0)
-      wakeup_pin = (gpio_num_t)pin_wake_btn;
-    }
-
-    gpio_set_direction(wakeup_pin, GPIO_MODE_INPUT);
+    // Disable WiFi and Bluetooth before deep sleep to save power
+    #ifdef ESP_PLATFORM
+      WiFi.mode(WIFI_OFF);
+      btStop();
+      // Disable watchdog timer - it can prevent deep sleep
+      esp_task_wdt_deinit();
+    #endif
+    
+    // Configure power domains for lowest power consumption
+    // Keep only RTC peripherals and memory needed for wakeup
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_ON);
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_ON);
+    // Power down other domains to save power
+    esp_sleep_pd_config(ESP_PD_DOMAIN_XTAL, ESP_PD_OPTION_OFF);
+    esp_sleep_pd_config(ESP_PD_DOMAIN_CPU, ESP_PD_OPTION_OFF);
+    esp_sleep_pd_config(ESP_PD_DOMAIN_VDDSDIO, ESP_PD_OPTION_OFF);
     
-    // Enable wakeup on rising edge (when DIO1 goes HIGH on LoRa packet RX)
-    esp_sleep_enable_ext0_wakeup(wakeup_pin, 1);
+    // Disable USB to save power (USB can prevent deep sleep or consume power)
+    // On ESP32-S3, USB Serial connection might prevent deep sleep
+    // According to Seeed Studio wiki: https://wiki.seeedstudio.com/XIAO_ESP32S3_Consumption/
+    // Always flush Serial before ending to ensure all data is sent
+    Serial.flush();
+    delay(100); // Give Serial time to finish all operations
+    Serial.end();
+    delay(100); // Additional delay after Serial.end() to ensure USB is fully disabled
+    
+    // Set USB pins (GPIO 19 = D-, GPIO 20 = D+) to INPUT with pull-down
+    // USB-Serial-JTAG pins can cause leakage if left floating
+    #ifdef CONFIG_IDF_TARGET_ESP32S3
+      pinMode(19, INPUT_PULLDOWN); // USB D-
+      pinMode(20, INPUT_PULLDOWN); // USB D+
+      delay(10);
+    #endif
+    
+    if (enable_radio_wakeup) {
+      gpio_num_t wakeup_pin = (gpio_num_t)P_LORA_DIO_1;
+      
+      if (pin_wake_btn >= 0) {
+        // If user button is specified, use it instead (only one pin supported by ext0)
+        wakeup_pin = (gpio_num_t)pin_wake_btn;
+      }
+
+      gpio_set_direction(wakeup_pin, GPIO_MODE_INPUT);
+      // Enable wakeup on rising edge (when DIO1 goes HIGH on LoRa packet RX)
+      esp_sleep_enable_ext0_wakeup(wakeup_pin, 1);
+    }
 
     if (secs > 0) {
       esp_sleep_enable_timer_wakeup(secs * 1000000);
     }
 
+    // CRITICAL: Enable GPIO deep sleep hold to maintain pin states during deep sleep
+    // This prevents GPIO pins from floating and causing leakage current
+    // Without this, pins may change state and cause power consumption issues
+    #ifdef ESP_PLATFORM
+      gpio_deep_sleep_hold_en();
+    #endif
+
+    // Small delay to ensure all operations complete
+    delay(100);
+    
     // Finally set ESP32 into sleep
+    // Expected power consumption:
+    // - ESP32-S3 module alone: ~8-20 µA in deep sleep
+    // - XIAO ESP32S3 dev board: ~2-8 mA (due to power LED, voltage regulator, etc.)
+    // Note: Dev board components (power LED, voltage regulator) cannot be disabled via software
+    // For lowest power consumption, measure directly on ESP32-S3 module or desolder power LED
     esp_deep_sleep_start();   // CPU halts here and never returns!
   }
 
@@ -176,10 +233,6 @@ public:
       // Attenuation ratio is 1/2, so multiply by 2 to get actual battery voltage
       // Result is in mV
       uint32_t battery_mv = 2 * avg_pin_voltage_mv;
-      
-      // Debug output to help diagnose issues
-      // Shows: pin number used, raw pin voltage, calculated battery voltage
-      Serial.printf("[BATT] pin=%d, pin_mv=%lu, battery_mv=%lu\n", pin, avg_pin_voltage_mv, battery_mv);
       
       // If reading is suspiciously low (< 50mV), it might indicate:
       // 1. No voltage divider connected (pin sees noise only)
