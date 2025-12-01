@@ -40,9 +40,15 @@ build_flags =
   -D MQTT_PORT=1883
   -D ADMIN_PASSWORD='"your_admin_password"'
   -D ROOM_PASSWORD='"your_room_password"'
-  ; Optional:
+  ; Optional authentication:
   ;  -D MQTT_USER='"username"'
   ;  -D MQTT_PASS='"password"'
+  ; Optional: Second MQTT server (can also be configured via CLI):
+  ;  -D MQTT_BROKER2='"your_second_mqtt_broker_ip"'
+  ;  -D MQTT_PORT2=1883
+  ;  -D MQTT_USER2='"username2"'
+  ;  -D MQTT_PASS2='"password2"'
+  ; Optional channel filtering:
   ;  -D MQTT_FILTER_CHANNELS='"0x01,0x02"'  ; Filter only specific channels
 ```
 
@@ -73,12 +79,60 @@ Example:
 
 Room Server supports the following CLI commands for bridge configuration:
 
+#### General Bridge Commands
+
 - `get bridge.enabled` - shows if bridge is enabled
 - `set bridge.enabled on/off` - enables/disables bridge
 - `get bridge.source` - shows packet source (logTx/logRx)
 - `set bridge.source tx/rx` - sets packet source
   - `tx` = forward transmitted packets
   - `rx` = forward received packets
+
+#### MQTT Server Configuration (Dual Server Support)
+
+Room Server supports **two MQTT servers** with runtime switching:
+
+**Server Selection:**
+- `get mqtt.server` - shows active server index (0 or 1)
+- `set mqtt.server 0/1` - switches to server 0 (primary) or 1 (secondary)
+  - Server 0: Primary server (from `MQTT_BROKER` and `MQTT_PORT` build flags)
+  - Server 1: Secondary server (from prefs or `MQTT_BROKER2`/`MQTT_PORT2` build flags)
+
+**Secondary Server Configuration:**
+- `get mqtt.broker2` - shows IP/hostname of secondary server
+- `set mqtt.broker2 <ip>` - sets IP/hostname for secondary server
+- `get mqtt.port2` - shows port of secondary server
+- `set mqtt.port2 <port>` - sets port for secondary server (1-65535)
+- `set mqtt.user2 <username>` - sets username for secondary server (optional)
+- `set mqtt.pass2 <password>` - sets password for secondary server (optional)
+
+**Configuration Methods:**
+
+1. **Via Build Flags** (in `platformio.private.ini`):
+   ```ini
+   -D MQTT_BROKER='"192.168.1.100"'
+   -D MQTT_PORT=1883
+   ; Optional second server:
+   -D MQTT_BROKER2='"192.168.1.101"'
+   -D MQTT_PORT2=1883
+   -D MQTT_USER2='"user2"'
+   -D MQTT_PASS2='"pass2"'
+   ```
+
+2. **Via CLI Commands** (runtime configuration):
+   ```
+   set mqtt.broker2 192.168.1.101
+   set mqtt.port2 1883
+   set mqtt.user2 myuser
+   set mqtt.pass2 mypass
+   set mqtt.server 1
+   ```
+
+**Notes:**
+- Topic prefix (`meshcore/tx` and `meshcore/rx`) remains the same for both servers
+- Switching servers disconnects from current server and reconnects to the new one
+- Secondary server configuration is saved to device preferences (persistent)
+- If secondary server is not configured, only server 0 is available
 
 ### Python Scripts
 

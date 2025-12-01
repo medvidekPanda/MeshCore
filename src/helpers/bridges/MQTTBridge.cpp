@@ -31,12 +31,10 @@ MQTTBridge::MQTTBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCCloc
       last_reconnect_attempt(0), reconnect_interval(5000) {
   _instance = this;
   
-  // Copy configuration
+  // Copy configuration for server 1 (primary, from build flags)
   strncpy(broker, MQTT_BROKER, sizeof(broker) - 1);
   broker[sizeof(broker) - 1] = 0;
   port = MQTT_PORT;
-  strncpy(topic_prefix, MQTT_TOPIC_PREFIX, sizeof(topic_prefix) - 1);
-  topic_prefix[sizeof(topic_prefix) - 1] = 0;
   
   #ifdef MQTT_USER
     strncpy(username, MQTT_USER, sizeof(username) - 1);
@@ -52,6 +50,57 @@ MQTTBridge::MQTTBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCCloc
     password[0] = 0;
   #endif
   
+  // Copy configuration for server 2 (secondary, from prefs or build flags)
+  #ifdef MQTT_BROKER2
+    strncpy(broker2, MQTT_BROKER2, sizeof(broker2) - 1);
+    broker2[sizeof(broker2) - 1] = 0;
+  #else
+    // Load from prefs if available
+    if (prefs->mqtt_broker2[0] != 0) {
+      strncpy(broker2, prefs->mqtt_broker2, sizeof(broker2) - 1);
+      broker2[sizeof(broker2) - 1] = 0;
+    } else {
+      broker2[0] = 0;
+    }
+  #endif
+  
+  #ifdef MQTT_PORT2
+    port2 = MQTT_PORT2;
+  #else
+    port2 = prefs->mqtt_port2 > 0 ? prefs->mqtt_port2 : 1883;
+  #endif
+  
+  #ifdef MQTT_USER2
+    strncpy(username2, MQTT_USER2, sizeof(username2) - 1);
+    username2[sizeof(username2) - 1] = 0;
+  #else
+    if (prefs->mqtt_user2[0] != 0) {
+      strncpy(username2, prefs->mqtt_user2, sizeof(username2) - 1);
+      username2[sizeof(username2) - 1] = 0;
+    } else {
+      username2[0] = 0;
+    }
+  #endif
+  
+  #ifdef MQTT_PASS2
+    strncpy(password2, MQTT_PASS2, sizeof(password2) - 1);
+    password2[sizeof(password2) - 1] = 0;
+  #else
+    if (prefs->mqtt_pass2[0] != 0) {
+      strncpy(password2, prefs->mqtt_pass2, sizeof(password2) - 1);
+      password2[sizeof(password2) - 1] = 0;
+    } else {
+      password2[0] = 0;
+    }
+  #endif
+  
+  // Set active server index from prefs (default to 0)
+  active_server_index = prefs->mqtt_server_index;
+  if (active_server_index > 1) active_server_index = 0;
+  
+  strncpy(topic_prefix, MQTT_TOPIC_PREFIX, sizeof(topic_prefix) - 1);
+  topic_prefix[sizeof(topic_prefix) - 1] = 0;
+  
   // Generate client ID
   snprintf(client_id, sizeof(client_id), "meshcore_%02X%02X%02X", 
            (unsigned int)prefs->node_name[0], 
@@ -62,15 +111,61 @@ MQTTBridge::MQTTBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCCloc
 void MQTTBridge::setupMQTTClient() {
   if (mqttClient == nullptr) {
     PubSubClient* client = new PubSubClient(wifiClient);
-    client->setServer(broker, port);
     client->setCallback(mqttCallback);
     mqttClient = client;
+  }
+  // Update server address based on active server
+  PubSubClient* client = (PubSubClient*)mqttClient;
+  client->setServer(getActiveBroker(), getActivePort());
+}
+
+const char* MQTTBridge::getActiveBroker() const {
+  return active_server_index == 1 ? broker2 : broker;
+}
+
+uint16_t MQTTBridge::getActivePort() const {
+  return active_server_index == 1 ? port2 : port;
+}
+
+const char* MQTTBridge::getActiveUsername() const {
+  return active_server_index == 1 ? username2 : username;
+}
+
+const char* MQTTBridge::getActivePassword() const {
+  return active_server_index == 1 ? password2 : password;
+}
+
+void MQTTBridge::switchToServer(uint8_t server_index) {
+  if (server_index > 1) return;
+  
+  if (server_index != active_server_index) {
+    // Disconnect from current server
+    if (mqttClient && _connected) {
+      ((PubSubClient*)mqttClient)->disconnect();
+      _connected = false;
+    }
+    
+    active_server_index = server_index;
+    
+    // Update prefs
+    if (_prefs) {
+      _prefs->mqtt_server_index = server_index;
+    }
+    
+    // Reconfigure client
+    setupMQTTClient();
+    
+    #if BRIDGE_DEBUG && ARDUINO
+      Serial.printf("%s BRIDGE: Switched to server %d (%s:%d)\n", 
+                     getLogDateTime(), server_index, getActiveBroker(), getActivePort());
+    #endif
   }
 }
 
 void MQTTBridge::begin() {
   #if BRIDGE_DEBUG && ARDUINO
-    Serial.printf("%s BRIDGE: Initializing MQTT bridge to %s:%d...\n", getLogDateTime(), broker, port);
+    Serial.printf("%s BRIDGE: Initializing MQTT bridge to %s:%d (server %d)...\n", 
+                   getLogDateTime(), getActiveBroker(), getActivePort(), active_server_index);
   #endif
   
   setupMQTTClient();
@@ -127,10 +222,15 @@ void MQTTBridge::reconnect() {
     return;
   }
   
+  // Update server address in case it changed
+  client->setServer(getActiveBroker(), getActivePort());
+  
   // Try to connect
   bool connected = false;
-  if (username[0] != 0) {
-    connected = client->connect(client_id, username, password);
+  const char* user = getActiveUsername();
+  const char* pass = getActivePassword();
+  if (user[0] != 0) {
+    connected = client->connect(client_id, user, pass);
   } else {
     connected = client->connect(client_id);
   }

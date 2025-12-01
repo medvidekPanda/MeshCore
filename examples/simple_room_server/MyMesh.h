@@ -35,7 +35,7 @@
 #endif
 
 #ifndef FIRMWARE_VERSION
-  #define FIRMWARE_VERSION   "v1.11.0"
+  #define FIRMWARE_VERSION   "v1.11.0-custom"
 #endif
 
 #ifndef LORA_FREQ
@@ -214,4 +214,29 @@ public:
   void clearStats() override;
   void handleCommand(uint32_t sender_timestamp, char* command, char* reply);
   void loop();
+
+  void setBridgeState(bool enable) override {
+#ifdef WITH_MQTT_BRIDGE
+    if (enable && !bridge.isRunning()) {
+      bridge.begin();
+    } else if (!enable && bridge.isRunning()) {
+      bridge.end();
+    }
+#endif
+  }
+
+  void restartBridge() override {
+#ifdef WITH_MQTT_BRIDGE
+    if (bridge.isRunning()) {
+      bridge.end();
+      bridge.begin();
+    }
+#endif
+  }
+
+  void switchMQTTServer(uint8_t server_index) override {
+#ifdef WITH_MQTT_BRIDGE
+    bridge.switchToServer(server_index);
+#endif
+  }
 };

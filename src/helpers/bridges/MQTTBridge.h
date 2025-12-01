@@ -35,12 +35,22 @@ private:
   WiFiClient wifiClient;
   void* mqttClient;  // PubSubClient instance (void* to avoid include dependency)
   
+  // Server 1 (primary, from build flags)
   char broker[64];
   uint16_t port;
-  char topic_prefix[64];
   char username[32];
   char password[32];
+  
+  // Server 2 (secondary, from prefs)
+  char broker2[64];
+  uint16_t port2;
+  char username2[32];
+  char password2[32];
+  
+  // Common settings
+  char topic_prefix[64];
   char client_id[32];
+  uint8_t active_server_index;  // 0 or 1
   
   bool _connected;
   unsigned long last_reconnect_attempt;
@@ -51,6 +61,10 @@ private:
   
   void reconnect();
   void setupMQTTClient();
+  const char* getActiveBroker() const;
+  uint16_t getActivePort() const;
+  const char* getActiveUsername() const;
+  const char* getActivePassword() const;
   
 public:
   /**
@@ -112,6 +126,20 @@ public:
    * @param length Payload length
    */
   void onMessage(char* topic, uint8_t* payload, unsigned int length);
+  
+  /**
+   * @brief Switch to a different MQTT server
+   *
+   * @param server_index 0 for primary server, 1 for secondary server
+   */
+  void switchToServer(uint8_t server_index);
+  
+  /**
+   * @brief Get current active server index
+   *
+   * @return 0 or 1
+   */
+  uint8_t getActiveServerIndex() const { return active_server_index; }
 };
 
 #endif // WITH_MQTT_BRIDGE
