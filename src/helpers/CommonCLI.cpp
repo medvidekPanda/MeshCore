@@ -338,6 +338,14 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
         sprintf(reply, "> %d", (uint32_t)_prefs->bridge_delay);
       } else if (memcmp(config, "bridge.source", 13) == 0) {
         sprintf(reply, "> %s", _prefs->bridge_pkt_src ? "logRx" : "logTx");
+#ifdef WITH_MQTT_BRIDGE
+      } else if (memcmp(config, "mqtt.server", 11) == 0) {
+        sprintf(reply, "> %d", (uint32_t)_prefs->mqtt_server_index);
+      } else if (memcmp(config, "mqtt.broker2", 13) == 0) {
+        sprintf(reply, "> %s", _prefs->mqtt_broker2[0] ? _prefs->mqtt_broker2 : "(not set)");
+      } else if (memcmp(config, "mqtt.port2", 10) == 0) {
+        sprintf(reply, "> %d", (uint32_t)_prefs->mqtt_port2);
+#endif
 #endif
 #ifdef WITH_RS232_BRIDGE
       } else if (memcmp(config, "bridge.baud", 11) == 0) {
@@ -524,6 +532,43 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
         _prefs->bridge_pkt_src = memcmp(&config[14], "rx", 2) == 0;
         savePrefs();
         strcpy(reply, "OK");
+#ifdef WITH_MQTT_BRIDGE
+      } else if (memcmp(config, "mqtt.server ", 12) == 0) {
+        int server_idx = atoi(&config[12]);
+        if (server_idx == 0 || server_idx == 1) {
+          _prefs->mqtt_server_index = (uint8_t)server_idx;
+          _callbacks->switchMQTTServer((uint8_t)server_idx);
+          savePrefs();
+          sprintf(reply, "OK - switched to server %d", server_idx);
+        } else {
+          strcpy(reply, "Error: server index must be 0 or 1");
+        }
+      } else if (memcmp(config, "mqtt.broker2 ", 13) == 0) {
+        StrHelper::strncpy(_prefs->mqtt_broker2, &config[13], sizeof(_prefs->mqtt_broker2));
+        savePrefs();
+        _callbacks->restartBridge();
+        sprintf(reply, "OK - broker2 set to %s", _prefs->mqtt_broker2);
+      } else if (memcmp(config, "mqtt.port2 ", 11) == 0) {
+        int port = atoi(&config[11]);
+        if (port > 0 && port <= 65535) {
+          _prefs->mqtt_port2 = (uint16_t)port;
+          savePrefs();
+          _callbacks->restartBridge();
+          sprintf(reply, "OK - port2 set to %d", port);
+        } else {
+          strcpy(reply, "Error: port must be between 1-65535");
+        }
+      } else if (memcmp(config, "mqtt.user2 ", 12) == 0) {
+        StrHelper::strncpy(_prefs->mqtt_user2, &config[12], sizeof(_prefs->mqtt_user2));
+        savePrefs();
+        _callbacks->restartBridge();
+        sprintf(reply, "OK - user2 set");
+      } else if (memcmp(config, "mqtt.pass2 ", 12) == 0) {
+        StrHelper::strncpy(_prefs->mqtt_pass2, &config[12], sizeof(_prefs->mqtt_pass2));
+        savePrefs();
+        _callbacks->restartBridge();
+        sprintf(reply, "OK - pass2 set");
+#endif
 #endif
 #ifdef WITH_RS232_BRIDGE
       } else if (memcmp(config, "bridge.baud ", 12) == 0) {
