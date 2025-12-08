@@ -9,14 +9,27 @@
 /**
  * @brief Bridge implementation using MQTT protocol for packet transport
  *
- * This bridge enables mesh packet transport over MQTT, allowing packets to be
- * forwarded to/from an MQTT broker over WiFi.
+ * This bridge enables mesh packet transport over MQTT, forwarding all mesh
+ * packets to an MQTT broker over WiFi. Acts as a send-only proxy.
  *
  * Features:
- * - MQTT publish/subscribe for packet forwarding
+ * - MQTT publish for packet forwarding (send-only mode)
+ * - All packets are forwarded (proxy mode)
+ * - Topic structure: meshcore/{channel_hash} for group messages, meshcore/all for others
  * - Network isolation using topic prefix
- * - Duplicate packet detection using SimpleMeshTables tracking
  * - Automatic reconnection to MQTT broker
+ * - Incoming MQTT messages are discarded
+ *
+ * Topic Structure:
+ * - Group messages (GRP_TXT, GRP_DATA): meshcore/{channel_name} or meshcore/{channel_hash}
+ *   - If channel name callback is set and returns a name, uses channel name (e.g., meshcore/MyChannel)
+ *   - Otherwise falls back to channel hash in hex (e.g., meshcore/D5)
+ * - Other packet types: meshcore/all
+ * - No subscription - bridge only sends, does not receive
+ * 
+ * Channel Name Resolution:
+ * - Use setChannelNameCallback() to provide a function that maps channel hash to channel name
+ * - If callback is not set or returns NULL, channel hash (hex) is used in topic
  *
  * Packet Structure:
  * [2 bytes] Magic Header - Used to identify MQTTBridge packets
@@ -30,6 +43,10 @@
  * - Define MQTT_TOPIC_PREFIX for topic prefix (default "meshcore/")
  * - Optionally define MQTT_USER and MQTT_PASS for authentication
  */
+// Callback function type for getting channel name from channel hash
+// Returns channel name if found, NULL otherwise
+typedef const char* (*ChannelNameCallback)(uint8_t channel_hash, void* user_data);
+
 class MQTTBridge : public BridgeBase {
 private:
   WiFiClient wifiClient;
@@ -55,6 +72,10 @@ private:
   bool _connected;
   unsigned long last_reconnect_attempt;
   unsigned long reconnect_interval;
+  
+  // Callback for getting channel name from hash
+  ChannelNameCallback channel_name_callback;
+  void* channel_name_user_data;
   
   static void mqttCallback(char* topic, uint8_t* payload, unsigned int length);
   static MQTTBridge* _instance;
@@ -140,6 +161,17 @@ public:
    * @return 0 or 1
    */
   uint8_t getActiveServerIndex() const { return active_server_index; }
+  
+  /**
+   * @brief Set callback function for getting channel name from channel hash
+   *
+   * @param callback Function that returns channel name for given hash, or NULL if not found
+   * @param user_data User data passed to callback
+   */
+  void setChannelNameCallback(ChannelNameCallback callback, void* user_data = nullptr) {
+    channel_name_callback = callback;
+    channel_name_user_data = user_data;
+  }
 };
 
 #endif // WITH_MQTT_BRIDGE

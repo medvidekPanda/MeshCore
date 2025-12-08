@@ -28,7 +28,8 @@ void MQTTBridge::mqttCallback(char* topic, uint8_t* payload, unsigned int length
 
 MQTTBridge::MQTTBridge(NodePrefs *prefs, mesh::PacketManager *mgr, mesh::RTCClock *rtc)
     : BridgeBase(prefs, mgr, rtc), mqttClient(nullptr), _connected(false),
-      last_reconnect_attempt(0), reconnect_interval(5000) {
+      last_reconnect_attempt(0), reconnect_interval(5000),
+      channel_name_callback(nullptr), channel_name_user_data(nullptr) {
   _instance = this;
   
   // Copy configuration for server 1 (primary, from build flags)
@@ -240,14 +241,6 @@ void MQTTBridge::reconnect() {
     #if BRIDGE_DEBUG && ARDUINO
       Serial.printf("%s BRIDGE: MQTT connected\n", getLogDateTime());
     #endif
-    
-    // Subscribe to receive topic
-    char topic[128];
-    snprintf(topic, sizeof(topic), "%srx", topic_prefix);
-    client->subscribe(topic);
-    #if BRIDGE_DEBUG && ARDUINO
-      Serial.printf("%s BRIDGE: Subscribed to %s\n", getLogDateTime(), topic);
-    #endif
   } else {
     _connected = false;
     #if BRIDGE_DEBUG && ARDUINO
@@ -301,9 +294,50 @@ void MQTTBridge::sendPacket(mesh::Packet* packet) {
   
   int total_len = len + 4;
   
-  // Publish to MQTT
+  // Build topic based on packet type and channel
   char topic[128];
-  snprintf(topic, sizeof(topic), "%stx", topic_prefix);
+  uint8_t payload_type = packet->getPayloadType();
+  
+  // For group messages (GRP_TXT, GRP_DATA), use channel name or hash as topic suffix
+  if (payload_type == PAYLOAD_TYPE_GRP_TXT || payload_type == PAYLOAD_TYPE_GRP_DATA) {
+    if (packet->payload_len > 0) {
+      // First byte of payload is channel hash
+      uint8_t channel_hash = packet->payload[0];
+      
+      // Try to get channel name from callback
+      const char* channel_name = nullptr;
+      if (channel_name_callback) {
+        channel_name = channel_name_callback(channel_hash, channel_name_user_data);
+      }
+      
+      if (channel_name && channel_name[0] != 0) {
+        // Use channel name in topic (sanitize for MQTT topic - replace invalid chars)
+        char sanitized_name[64];
+        int j = 0;
+        for (int i = 0; channel_name[i] != 0 && j < sizeof(sanitized_name) - 1; i++) {
+          char c = channel_name[i];
+          // MQTT topic allows: A-Z, a-z, 0-9, and some special chars, but we'll keep it simple
+          if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || 
+              c == '-' || c == '_' || c == '.') {
+            sanitized_name[j++] = c;
+          } else if (c == ' ') {
+            sanitized_name[j++] = '_';  // Replace spaces with underscores
+          }
+        }
+        sanitized_name[j] = 0;
+        snprintf(topic, sizeof(topic), "%s%s", topic_prefix, sanitized_name);
+      } else {
+        // Fallback to channel hash if name not available
+        snprintf(topic, sizeof(topic), "%s%02X", topic_prefix, channel_hash);
+      }
+    } else {
+      // Fallback if payload is empty
+      snprintf(topic, sizeof(topic), "%sall", topic_prefix);
+    }
+  } else {
+    // For other packet types, use "all" as suffix
+    snprintf(topic, sizeof(topic), "%sall", topic_prefix);
+  }
   
   if (client->publish(topic, buffer, total_len)) {
     #if BRIDGE_DEBUG && ARDUINO
@@ -317,55 +351,13 @@ void MQTTBridge::sendPacket(mesh::Packet* packet) {
 }
 
 void MQTTBridge::onMessage(char* topic, uint8_t* payload, unsigned int length) {
-  if (length < 4) {
-    #if BRIDGE_DEBUG && ARDUINO
-      Serial.printf("%s BRIDGE: RX packet too small, len=%d\n", getLogDateTime(), length);
-    #endif
-    return;
-  }
-  
-  // Check magic header
-  uint16_t received_magic = ((uint16_t)payload[0] << 8) | payload[1];
-  if (received_magic != BRIDGE_PACKET_MAGIC) {
-    #if BRIDGE_DEBUG && ARDUINO
-      Serial.printf("%s BRIDGE: RX invalid magic 0x%04X\n", getLogDateTime(), received_magic);
-    #endif
-    return;
-  }
-  
-  // Extract checksum
-  uint16_t received_checksum = ((uint16_t)payload[3] << 8) | payload[2];
-  
-  // Validate checksum
-  const size_t payload_len = length - 4;
-  if (!validateChecksum(payload + 4, payload_len, received_checksum)) {
-    #if BRIDGE_DEBUG && ARDUINO
-      Serial.printf("%s BRIDGE: RX checksum mismatch, rcv=0x%04X\n", getLogDateTime(), received_checksum);
-    #endif
-    return;
-  }
-  
+  // Incoming messages are discarded - bridge only sends packets to MQTT
+  // This callback should not be called since we don't subscribe to any topics,
+  // but keeping it for safety in case MQTT client receives unexpected messages
   #if BRIDGE_DEBUG && ARDUINO
-    Serial.printf("%s BRIDGE: RX, payload_len=%d\n", getLogDateTime(), payload_len);
+    Serial.printf("%s BRIDGE: RX message discarded (bridge is send-only), topic=%s, len=%d\n", 
+                   getLogDateTime(), topic, length);
   #endif
-  
-  // Parse packet
-  mesh::Packet* pkt = _mgr->allocNew();
-  if (!pkt) {
-    #if BRIDGE_DEBUG && ARDUINO
-      Serial.printf("%s BRIDGE: RX failed to allocate packet\n", getLogDateTime());
-    #endif
-    return;
-  }
-  
-  if (pkt->readFrom(payload + 4, payload_len)) {
-    handleReceivedPacket(pkt);
-  } else {
-    #if BRIDGE_DEBUG && ARDUINO
-      Serial.printf("%s BRIDGE: RX failed to parse packet\n", getLogDateTime());
-    #endif
-    _mgr->free(pkt);
-  }
 }
 
 void MQTTBridge::onPacketReceived(mesh::Packet* packet) {
