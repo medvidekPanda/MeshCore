@@ -92,7 +92,11 @@ void CommonCLI::loadPrefsInt(FILESYSTEM* fs, const char* filename) {
     _prefs->bw = constrain(_prefs->bw, 7.8f, 500.0f);
     _prefs->sf = constrain(_prefs->sf, 5, 12);
     _prefs->cr = constrain(_prefs->cr, 5, 8);
-    _prefs->tx_power_dbm = constrain(_prefs->tx_power_dbm, 1, 30);
+    #ifdef MAX_LORA_TX_POWER
+      _prefs->tx_power_dbm = constrain(_prefs->tx_power_dbm, 1, MAX_LORA_TX_POWER);
+    #else
+      _prefs->tx_power_dbm = constrain(_prefs->tx_power_dbm, 1, 30);
+    #endif
     _prefs->multi_acks = constrain(_prefs->multi_acks, 0, 1);
     _prefs->adc_multiplier = constrain(_prefs->adc_multiplier, 0.0f, 10.0f);
 
@@ -505,10 +509,22 @@ void CommonCLI::handleCommand(uint32_t sender_timestamp, const char* command, ch
           strcpy(reply, "Error, cannot be negative");
         }
       } else if (memcmp(config, "tx ", 3) == 0) {
-        _prefs->tx_power_dbm = atoi(&config[3]);
-        savePrefs();
-        _callbacks->setTxPower(_prefs->tx_power_dbm);
-        strcpy(reply, "OK");
+        uint8_t requested_power = atoi(&config[3]);
+        #ifdef MAX_LORA_TX_POWER
+          if (requested_power > MAX_LORA_TX_POWER) {
+            sprintf(reply, "Error, max %d dBm", MAX_LORA_TX_POWER);
+          } else {
+            _prefs->tx_power_dbm = requested_power;
+            savePrefs();
+            _callbacks->setTxPower(_prefs->tx_power_dbm);
+            strcpy(reply, "OK");
+          }
+        #else
+          _prefs->tx_power_dbm = requested_power;
+          savePrefs();
+          _callbacks->setTxPower(_prefs->tx_power_dbm);
+          strcpy(reply, "OK");
+        #endif
       } else if (sender_timestamp == 0 && memcmp(config, "freq ", 5) == 0) {
         _prefs->freq = atof(&config[5]);
         savePrefs();

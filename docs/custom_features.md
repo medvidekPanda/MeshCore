@@ -10,6 +10,7 @@ This document describes custom changes added to MeshCore firmware that are not p
 4. [Companion Radio with Light Sleep and Environmental Sensors](#companion-radio-with-light-sleep-and-environmental-sensors)
 5. [Companion Radio with Deep Sleep for Ultra-Low Power](#companion-radio-with-deep-sleep-for-ultra-low-power)
 6. [USB Serial Configuration (When Bluetooth is Disabled)](#usb-serial-configuration-when-bluetooth-is-disabled)
+7. [Heltec V4 Low Sleep and TX Power Management](#heltec-v4-low-sleep-and-tx-power-management)
 
 ---
 
@@ -990,6 +991,108 @@ _Firmware version: battery-test branch (DEV)_
 - `examples/simple_repeater/main.cpp` - Light sleep with 1-hour timeout, immediate packet processing, USB detection fix
 - `examples/companion_radio/ui-orig/UITask.cpp` - Battery percentage calculation updated to 4100mV max (under load)
 - `examples/companion_radio/ui-new/UITask.cpp` - Battery percentage calculation updated to 4100mV max (under load)
+
+---
+
+## Heltec V4 Low Sleep and TX Power Management
+
+### Description
+
+Enhanced Heltec V4 (LoRa32 V4) support with light sleep mode for ultra-low power consumption and intelligent TX power management with automatic battery-based power reduction.
+
+### Features
+
+1. **Light Sleep Mode** - Ultra-low power consumption (~10-15mA) with fast wakeup on LoRa packet reception
+2. **TX Power Management** - Support for up to 27 dBm total output with automatic power reduction at low battery
+3. **Brownout Protection** - Voltage stabilization delays and automatic power reduction prevent brownout restarts
+4. **Non-linear PA Mapping** - Correct mapping for GC1109 PA + 17dB attenuator configuration
+
+### Build Variants
+
+- `heltec_v4_repeater_lowpower` - Standard low power variant
+- `heltec_v4_repeater_low_sleep` - Light sleep variant for ultra-low power consumption
+
+### TX Power Configuration
+
+Heltec V4 uses GC1109 power amplifier with non-linear gain curve. The mapping between requested power and actual output is:
+
+- **22 dBm requested** → 10 dBm to RadioLib → **22 dBm actual output**
+- **27 dBm requested** → 22 dBm to RadioLib (SX1262 max) → **27 dBm actual output** (PA adds boost)
+- **23-26 dBm** → Linear interpolation between 10 and 22 dBm
+
+**Automatic Power Reduction at Low Battery:**
+- Battery < 3600 mV: Maximum power limited to **22 dBm** (prevents brownout)
+- Battery 3600-3800 mV: Maximum power limited to **24 dBm**
+- Battery > 3800 mV: Full **27 dBm** allowed
+
+**CLI Commands:**
+- `get tx` - Read current TX power setting
+- `set tx <value>` - Set TX power (1-27 dBm, automatically limited by battery voltage)
+
+### Light Sleep Implementation
+
+**Power Consumption:**
+- Active mode: ~50-100mA
+- Light sleep: ~10-15mA (radio stays in RX mode)
+- Display and peripherals are powered down during sleep
+
+**Wakeup Sources:**
+- LoRa packet reception (DIO1 interrupt)
+- Timer timeout (default: 3600 seconds for battery monitoring)
+
+**Features:**
+- Display stays off after wakeup (only turned on at boot) to save power
+- TX LED disabled to save power
+- Voltage stabilization delays prevent brownout during TX
+- Automatic battery voltage monitoring every hour
+
+### Brownout Protection
+
+Multiple protection mechanisms prevent brownout restart during TX:
+
+1. **Voltage-dependent delays before TX:**
+   - Battery < 3400 mV: 200ms delay
+   - Battery 3400-3500 mV: 150ms delay
+   - Battery 3500-3600 mV: 100ms delay
+   - Battery > 3600 mV: 50ms delay
+
+2. **Voltage stabilization after wakeup:**
+   - 100ms delay after light sleep wakeup
+
+3. **Automatic power reduction:**
+   - Power automatically reduced based on battery voltage
+
+4. **PA stabilization:**
+   - 10ms delay after enabling PA before TX
+   - 20ms delay after TX for voltage recovery
+
+### Implementation Files
+
+- `variants/heltec_v4/HeltecV4Board.cpp` - Light sleep implementation, brownout protection, TX power management
+- `variants/heltec_v4/HeltecV4Board.h` - Board class definition
+- `variants/heltec_v4/target.cpp` - TX power mapping with battery-based reduction
+- `variants/heltec_v4/platformio.ini` - Build configuration with `MAX_LORA_TX_POWER=27`
+
+### Configuration
+
+**TX Power Limits:**
+```ini
+-D LORA_TX_POWER=10 ; Default: 10 dBm = 22 dBm output
+-D MAX_LORA_TX_POWER=27 ; Maximum: 27 dBm total output
+```
+
+**Light Sleep:**
+```ini
+-D ENABLE_LIGHT_SLEEP=1
+; Optional: -D LIGHT_SLEEP_TIMEOUT=60 ; Custom timeout in seconds
+```
+
+### Notes
+
+- TX power value in CLI represents **total output power**, not SX1262 input power
+- Power is automatically reduced at low battery to prevent brownout
+- Display and TX LED are disabled to minimize power consumption
+- Never exceeds 27 dBm (legal/regulatory limit enforced in code)
 
 picocom -b 115200 --imap lfcrlf /dev/cu.usbmodem11301
 cat /dev/cu.usbmodem11301

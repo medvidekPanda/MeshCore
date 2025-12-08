@@ -1,4 +1,5 @@
 #include "HeltecV4Board.h"
+#include "target.h"
 
 void HeltecV4Board::begin() {
     ESP32Board::begin();
@@ -32,13 +33,42 @@ void HeltecV4Board::begin() {
   }
 
   void HeltecV4Board::onBeforeTransmit(void) {
-    digitalWrite(P_LORA_TX_LED, HIGH);   // turn TX LED on
-    digitalWrite(P_LORA_PA_TX_EN,HIGH);
+    // Check battery voltage before TX to prevent brownout restart
+    // ESP32-S3 brownout detector can trigger at ~2.9-3.1V
+    // At low battery (~3.5V), voltage sag during TX can cause brownout
+    uint16_t batt_mv = getBattMilliVolts();
+    
+    // Always add a small delay to stabilize voltage before TX
+    // This is especially important after waking from light sleep
+    // Longer delay for lower voltages to allow stabilization
+    if (batt_mv > 0 && batt_mv < 3600) {
+      if (batt_mv < 3400) {
+        delay(200);  // Longer delay for very low voltage
+      } else if (batt_mv < 3500) {
+        delay(150);  // Medium delay for low voltage
+      } else {
+        delay(100);  // Standard delay for slightly low voltage
+      }
+    } else {
+      delay(50);  // Minimal delay even for good voltage (helps after light sleep wakeup)
+    }
+    
+    // Enable PA TX pin first
+    digitalWrite(P_LORA_PA_TX_EN, HIGH);
+    delay(10);  // Small delay for PA to stabilize before TX
+    
+    // TX LED disabled to save power (especially important in low sleep mode)
+    // digitalWrite(P_LORA_TX_LED, HIGH);   // turn TX LED on
   }
 
   void HeltecV4Board::onAfterTransmit(void) {
-    digitalWrite(P_LORA_TX_LED, LOW);   // turn TX LED off
-    digitalWrite(P_LORA_PA_TX_EN,LOW);
+    // TX LED disabled to save power
+    // digitalWrite(P_LORA_TX_LED, LOW);   // turn TX LED off
+    digitalWrite(P_LORA_PA_TX_EN, LOW);
+    
+    // Small delay after TX to allow voltage to recover
+    // This helps prevent brownout if another TX happens soon after
+    delay(20);
   }
 
   void HeltecV4Board::enterDeepSleep(uint32_t secs, int pin_wake_btn) {
@@ -64,6 +94,94 @@ void HeltecV4Board::begin() {
 
     // Finally set ESP32 into sleep
     esp_deep_sleep_start();   // CPU halts here and never returns!
+  }
+
+  void HeltecV4Board::enterLightSleep(uint32_t secs, int pin_wake_btn) {
+    // Light sleep implementation for Heltec V4
+    // Light sleep allows radio to stay in RX mode and wake up faster than deep sleep
+    
+    // Turn off display if present (before cutting power)
+    #ifdef DISPLAY_CLASS
+      display.turnOff();
+    #endif
+    
+    // Power down peripherals to save power during light sleep
+    // Display and other peripherals are powered via periph_power pin
+    periph_power.release();
+    
+    // Flush Serial to ensure all data is sent before sleep
+    Serial.flush();
+    delay(100);  // Give UART time to finish all operations
+    
+    // Configure wakeup pin
+    gpio_num_t wakeup_pin = (gpio_num_t)P_LORA_DIO_1;
+    if (pin_wake_btn >= 0) {
+      wakeup_pin = (gpio_num_t)pin_wake_btn;
+    }
+    
+    // CRITICAL: Remove GPIO interrupt handler before light sleep
+    // RadioLib interrupt handler conflicts with GPIO wakeup during light sleep
+    // First disable the interrupt, then remove the handler
+    gpio_intr_disable(wakeup_pin);
+    gpio_isr_handler_remove(wakeup_pin);
+    delay(50);  // Give time for interrupt to fully stop
+    
+    // CRITICAL: Ensure pin is NOT in RTC mode, otherwise gpio_wakeup_enable might not work
+    // rtc_gpio_deinit() also releases any RTC GPIO holds, so no need for separate rtc_gpio_hold_dis()
+    rtc_gpio_deinit(wakeup_pin);
+    
+    // Configure GPIO for wakeup (light sleep works with any GPIO, including RTC pins)
+    gpio_set_direction(wakeup_pin, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(wakeup_pin, GPIO_PULLDOWN_ONLY);
+    
+    // Disable any existing wakeup sources first
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+    
+    // Disable any existing GPIO wakeup on this pin
+    gpio_wakeup_disable(wakeup_pin);
+    
+    // Enable GPIO wakeup on high level (when DIO1 goes HIGH on LoRa packet RX)
+    // HIGH_LEVEL is more reliable than POSEDGE for light sleep
+    esp_sleep_enable_gpio_wakeup();
+    gpio_wakeup_enable(wakeup_pin, GPIO_INTR_HIGH_LEVEL);
+    
+    // Enable timer wakeup if specified
+    if (secs > 0) {
+      esp_sleep_enable_timer_wakeup(secs * 1000000);
+    }
+    
+    // Enter light sleep (this will return after wakeup, unlike deep sleep)
+    esp_light_sleep_start();
+    
+    // After wakeup, RadioLib will re-attach its interrupt handler when needed
+    // We don't need to manually re-enable interrupts here
+    
+    // Check the wakeup cause and set startup_reason
+    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_GPIO) {
+      // For light sleep with GPIO wakeup, check if DIO1 pin is HIGH
+      // This indicates a LoRa packet was received
+      if (gpio_get_level(wakeup_pin) == 1) {
+        startup_reason = BD_STARTUP_RX_PACKET;
+      } else {
+        startup_reason = BD_STARTUP_NORMAL;
+      }
+    } else {
+      // Clear startup reason if not GPIO wakeup
+      startup_reason = BD_STARTUP_NORMAL;
+    }
+    
+    // Disable wakeup sources for next sleep
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+    if (secs > 0) {
+      esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    }
+    
+    // CRITICAL: Add delay after wakeup to stabilize voltage before any TX
+    // This prevents brownout restart when device wakes and immediately needs to TX
+    // Voltage needs time to stabilize after light sleep, especially with low battery
+    delay(100);  // Allow voltage to stabilize after wakeup
+  
   }
 
   void HeltecV4Board::powerOff()  {
