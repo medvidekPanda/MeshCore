@@ -2,7 +2,7 @@
 
 #include "ESP32Board.h"
 
-#if defined(ADMIN_PASSWORD) && !defined(DISABLE_WIFI_OTA)   // Repeater or Room Server only
+#if defined(ADMIN_PASSWORD)  // OTA available via CLI even with DISABLE_WIFI_OTA=1 (for low power variants)
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>

@@ -1087,12 +1087,34 @@ Multiple protection mechanisms prevent brownout restart during TX:
 ; Optional: -D LIGHT_SLEEP_TIMEOUT=60 ; Custom timeout in seconds
 ```
 
+### OTA Updates in Low Power Variants
+
+**WiFi and OTA:**
+- WiFi is **disabled by default** in low power variants (`DISABLE_WIFI_OTA=1`) to save power
+- OTA updates are **available via CLI** even in low power variants
+- WiFi is only activated when explicitly requested via CLI
+
+**How to Update Firmware:**
+1. Connect to device via Serial/CLI (USB or LoRa mesh)
+2. Run command: `start ota`
+3. Device will start WiFi hotspot named `MeshCore-OTA`
+4. Connect your computer/phone to the hotspot
+5. Open browser: `http://192.168.4.1/update`
+6. Upload firmware `.bin` file
+7. Device will reboot with new firmware
+
+**Power Consumption:**
+- WiFi hotspot consumes ~50-100mA (only active during OTA update)
+- After update, WiFi is automatically disabled again
+- Normal operation: WiFi off, low power mode active
+
 ### Notes
 
 - TX power value in CLI represents **total output power**, not SX1262 input power
 - Power is automatically reduced at low battery to prevent brownout
 - Display and TX LED are disabled to minimize power consumption
 - Never exceeds 27 dBm (legal/regulatory limit enforced in code)
+- OTA available via CLI even in low power variants (WiFi activated on-demand)
 
 picocom -b 115200 --imap lfcrlf /dev/cu.usbmodem11301
 cat /dev/cu.usbmodem11301
