@@ -51,55 +51,7 @@ void radio_set_params(float freq, float bw, uint8_t sf, uint8_t cr) {
 }
 
 void radio_set_tx_power(uint8_t dbm) {
-  // Heltec V4 with GC1109 PA + 17dB attenuator (non-linear gain curve)
-  // Based on forum discussions and Meshtastic implementation
-  // 
-  // Heltec V4 mapping:
-  // - Value 10 dBm (into PA) = 22 dBm total output
-  // - For 27 dBm total: set internal SX1262 to 22 dBm (max), external PA adds boost
-  // - SX1262 max is 22 dBm, external PA adds ~5 dB for total 27 dBm
-  // 
-  // CRITICAL: Never exceed 27 dBm total output (legal/regulatory limit)
-  
-  // Enforce maximum of 27 dBm to prevent exceeding legal limits
-  if (dbm > 27) {
-    dbm = 27;
-  }
-  
-  // Automatic power reduction at low battery to prevent brownout
-  // 27 dBm requires high current draw, which can cause voltage sag and brownout restart
-  uint16_t batt_mv = board.getBattMilliVolts();
-  if (batt_mv > 0) {
-    if (batt_mv < 3600) {
-      // Very low battery: limit to 22 dBm max
-      if (dbm > 22) {
-        dbm = 22;
-      }
-    } else if (batt_mv < 3800) {
-      // Low battery: limit to 25 dBm max
-      if (dbm > 24) {
-        dbm = 24;
-      }
-    }
-    // For battery > 3800 mV, allow full 27 dBm
-  }
-  
-  uint8_t radiolib_power;
-  if (dbm >= 27) {
-    // For 27 dBm: set internal SX1262 to 22 dBm (max), external GC1109 PA adds boost
-    radiolib_power = 22;  // SX1262 max, PA boosts to 27 dBm total (max legal limit)
-  } else if (dbm == 22) {
-    // For 22 dBm: use value 10 (10 dBm into PA = 22 dBm total output)
-    radiolib_power = 10;  // 10 dBm into PA = 22 dBm total output
-  } else if (dbm > 22 && dbm < 27) {
-    // For 23-26 dBm: interpolate between 10 and 22
-    radiolib_power = 10 + ((dbm - 22) * 12 / 5);  // Linear interpolation
-    if (radiolib_power > 22) radiolib_power = 22;  // Cap at max
-  } else {
-    // For lower values: direct mapping
-    radiolib_power = dbm;
-  }
-  radio.setOutputPower(radiolib_power);
+  radio.setOutputPower(dbm);
 }
 
 mesh::LocalIdentity radio_new_identity() {

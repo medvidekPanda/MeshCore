@@ -33,42 +33,13 @@ void HeltecV4Board::begin() {
   }
 
   void HeltecV4Board::onBeforeTransmit(void) {
-    // Check battery voltage before TX to prevent brownout restart
-    // ESP32-S3 brownout detector can trigger at ~2.9-3.1V
-    // At low battery (~3.5V), voltage sag during TX can cause brownout
-    uint16_t batt_mv = getBattMilliVolts();
-    
-    // Always add a small delay to stabilize voltage before TX
-    // This is especially important after waking from light sleep
-    // Longer delay for lower voltages to allow stabilization
-    if (batt_mv > 0 && batt_mv < 3600) {
-      if (batt_mv < 3400) {
-        delay(200);  // Longer delay for very low voltage
-      } else if (batt_mv < 3500) {
-        delay(150);  // Medium delay for low voltage
-      } else {
-        delay(100);  // Standard delay for slightly low voltage
-      }
-    } else {
-      delay(50);  // Minimal delay even for good voltage (helps after light sleep wakeup)
-    }
-    
-    // Enable PA TX pin first
+    digitalWrite(P_LORA_TX_LED, HIGH);   // turn TX LED on
     digitalWrite(P_LORA_PA_TX_EN, HIGH);
-    delay(10);  // Small delay for PA to stabilize before TX
-    
-    // TX LED disabled to save power (especially important in low sleep mode)
-    // digitalWrite(P_LORA_TX_LED, HIGH);   // turn TX LED on
   }
 
   void HeltecV4Board::onAfterTransmit(void) {
-    // TX LED disabled to save power
-    // digitalWrite(P_LORA_TX_LED, LOW);   // turn TX LED off
+    digitalWrite(P_LORA_TX_LED, LOW);   // turn TX LED off
     digitalWrite(P_LORA_PA_TX_EN, LOW);
-    
-    // Small delay after TX to allow voltage to recover
-    // This helps prevent brownout if another TX happens soon after
-    delay(20);
   }
 
   void HeltecV4Board::enterDeepSleep(uint32_t secs, int pin_wake_btn) {
@@ -176,12 +147,6 @@ void HeltecV4Board::begin() {
     if (secs > 0) {
       esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
     }
-    
-    // CRITICAL: Add delay after wakeup to stabilize voltage before any TX
-    // This prevents brownout restart when device wakes and immediately needs to TX
-    // Voltage needs time to stabilize after light sleep, especially with low battery
-    delay(100);  // Allow voltage to stabilize after wakeup
-  
   }
 
   void HeltecV4Board::powerOff()  {

@@ -175,6 +175,7 @@ void loop() {
   if (len > 0 && command[len - 1] == '\r') { // received complete line
     Serial.print('\n');
     command[len - 1] = 0; // replace newline with C string null terminator
+    
     char reply[160];
     the_mesh.handleCommand(0, command, reply); // NOTE: there is no sender_timestamp via serial!
     if (reply[0]) {
@@ -269,14 +270,28 @@ void loop() {
 
     // Handle wakeup from light sleep
     if (board.getStartupReason() == BD_STARTUP_RX_PACKET) {
+      // BROWN-OUT PROTECTION: Add significant delay immediately after wakeup
+      // The device needs time to stabilize voltage before ramping up current for Radio/SPI/TX.
+      // Without this, the sudden current spike causes voltage sag and ESP32 reset.
+      delay(250);
+
       // The wakeup was triggered by the LoRa DIO1 line.
       // RadioLib callbacks were not executed during light sleep, so mark the packet as ready.
       radio_driver.forcePacketReady();
       
-      // CRITICAL: Process the packet IMMEDIATELY before re-initializing anything
+      // CRITICAL: Re-initialize RadioLib interrupt handler BEFORE processing
+      // We need interrupts enabled because if the packet requires a response (like login),
+      // the TX operation will need interrupts to detect TX completion.
+      radio_driver.reinitInterrupts();
+      
+      // CRITICAL: Process the packet IMMEDIATELY
       // The packet is already in radio buffer and must be read before it's lost
       // Don't wait for re-initialization - process it right away
       the_mesh.loop();
+      
+      // Give extra time for processing and potential response
+      // This is crucial for login/authentication packets that need immediate response
+      delay(100);
     } else {
       // Wakeup was due to timeout (not packet) - periodic safety check (every 1 hour)
       // Measure and log battery voltage for monitoring battery health
@@ -285,12 +300,10 @@ void loop() {
 
       // Log battery voltage (USB connection check not needed here - we just woke up)
       Serial.printf("[BATT] Safety check (hourly): Battery: %.3fV (%umV)\n", batt_v, batt_mv);
+      
+      // Re-initialize interrupts for timeout wakeup too
+      radio_driver.reinitInterrupts();
     }
-
-    // CRITICAL: Re-initialize RadioLib interrupt handler after light sleep
-    // The interrupt handler was removed before sleep to prevent conflicts
-    // This is done AFTER processing the wakeup packet (if any)
-    radio_driver.reinitInterrupts();
 
     // Ensure radio is in RX mode after re-initialization
     // (if we didn't wake up from packet, this ensures radio is ready for next packets)
