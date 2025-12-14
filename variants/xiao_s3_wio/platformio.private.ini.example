@@ -27,12 +27,4 @@ build_flags =
   ; Sensor channel configuration (private)
   -D SENSOR_CHANNEL_NAME='"my-sensor-channel"'
   -D SENSOR_CHANNEL_PSK='"aBcDeFgHiJkLmNoPqRsTuVwXyZ123456=="'
-
-[env:Xiao_S3_WIO_sensor_deep_sleep]
-extends = env:Xiao_S3_WIO_sensor_deep_sleep_base
-build_flags =
-  ${env:Xiao_S3_WIO_sensor_deep_sleep_base.build_flags}
-  ; Sensor channel configuration (private)
-  -D SENSOR_CHANNEL_NAME='"my-sensor-channel"'
-  -D SENSOR_CHANNEL_PSK='"aBcDeFgHiJkLmNoPqRsTuVwXyZ123456=="'
-
+  -D ROOM_SERVER_ID='"pub-key"'
