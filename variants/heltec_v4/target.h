@@ -15,6 +15,7 @@
 
 extern HeltecV4Board board;
 extern WRAPPER_CLASS radio_driver;
+extern ESP32RTCClock fallback_clock;
 extern AutoDiscoverRTCClock rtc_clock;
 extern EnvironmentSensorManager sensors;
 
