@@ -2,24 +2,6 @@
 ; Copy this file to platformio.private.ini and fill in your actual values
 ; This file should NOT be committed to git
 
-[env:Xiao_S3_WIO_room_server_mqtt]
-extends = env:Xiao_S3_WIO_room_server_mqtt_base
-build_flags =
-  ${env:Xiao_S3_WIO_room_server_mqtt_base.build_flags}
-  -D WIFI_SSID='"MyWiFiNetwork"'
-  -D WIFI_PWD='"MySecurePassword123"'
-  -D MQTT_BROKER='"192.168.1.100"'
-  -D MQTT_PORT=1883
-  -D ADMIN_PASSWORD='"admin123"'
-  -D ROOM_PASSWORD='"room456"'
-;  -D MQTT_USER='"mqtt_user"'
-;  -D MQTT_PASS='"mqtt_password"'
-; Optional: Second MQTT server (can also be configured via CLI):
-;  -D MQTT_BROKER2='"192.168.1.101"'
-;  -D MQTT_PORT2=1883
-;  -D MQTT_USER2='"mqtt_user2"'
-;  -D MQTT_PASS2='"mqtt_password2"'
-
 [env:Xiao_S3_WIO_companion_radio_deep_sleep]
 extends = env:Xiao_S3_WIO_companion_radio_deep_sleep_base
 build_flags =
