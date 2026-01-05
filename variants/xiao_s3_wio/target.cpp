@@ -22,8 +22,10 @@ EnvironmentSensorManager sensors;
 #endif
 
 bool radio_init() {
-  fallback_clock.begin();
+  // Nejdříve načti čas z externího RTC modulu (DS3231), pokud je dostupný
+  // Pak teprve obnov čas z RTC paměti ESP32 (fallback)
   rtc_clock.begin(Wire);
+  fallback_clock.begin();
   pinMode(21, INPUT);
   pinMode(48, OUTPUT);
 
