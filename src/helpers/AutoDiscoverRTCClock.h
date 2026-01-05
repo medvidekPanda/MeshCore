@@ -14,6 +14,8 @@ public:
   void begin(TwoWire& wire);
   uint32_t getCurrentTime() override;
   void setCurrentTime(uint32_t time) override;
+  bool isRTCRunning() const;  // Vrátí true, pokud RTC modul má validní čas
+  const char* getRTCStatus() const;  // Vrátí textový popis stavu RTC (OK, NOT_DETECTED, INVALID_TIME, I2C_ERROR)
 
   void tick() override {
     _fallback->tick();   // is typically VolatileRTCClock, which now needs tick()

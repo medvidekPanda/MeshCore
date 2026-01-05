@@ -2,6 +2,7 @@
 #include <helpers/sensors/LPPDataHelpers.h>
 #include <math.h>      // for isnan()
 #include <Wire.h>
+#include "target.h"  // Pro externí proměnnou rtc_clock
 
 #ifdef ESP_PLATFORM
   #include <driver/gpio.h>
@@ -59,9 +60,9 @@
 #endif
 
 // Constants
-const uint32_t SENSOR_DATA_WAIT_MS = 30000;        // 30 seconds
-const uint32_t FINAL_PROCESSING_LOOPS = 50;
-const uint32_t FINAL_RADIO_WAIT_MS = 5000;         // 5 seconds
+const uint32_t SENSOR_DATA_WAIT_MS = 8000;         // 8 seconds - dostatečné pro LoRa přenos
+const uint32_t FINAL_PROCESSING_LOOPS = 20;        // 20 × 100ms = 2s pro dokončení
+const uint32_t FINAL_RADIO_WAIT_MS = 1000;         // 1 sekunda finální rezerva
 const int COMPANION_ID_HEX_LEN = 64;
 
 class MyMesh : public SensorMesh {
@@ -304,22 +305,28 @@ protected:
     // Check if sensors are communicating
     bool sensors_ok = !(isnan(temp_sht40) && isnan(humidity_sht40) && isnan(pressure_bmp280));
     
-    char text_data[128];
+    char text_data[160];
     uint32_t timestamp = getRTCClock()->getCurrentTime();
+    
+    // Získej textový popis stavu RTC (použij externí proměnnou rtc_clock z target.h)
+    const char* rtc_status = rtc_clock.getRTCStatus();
+    
     int len;
     
     if (!sensors_ok && telemetry.getSize() <= 4) {
-      len = snprintf(text_data, sizeof(text_data), "Sensor communication error: sensors not responding (time: %u)", timestamp);
+      len = snprintf(text_data, sizeof(text_data), "Sensor communication error: sensors not responding (time: %u, rtc_status: %s)", 
+        timestamp, rtc_status);
     } else if (!sensors_ok) {
-      len = snprintf(text_data, sizeof(text_data), "Sensor partial error: SHT40/BMP280 not responding (time: %u, voltage: %.3fV)", 
-        timestamp, isnan(voltage) ? 0.0f : voltage);
+      len = snprintf(text_data, sizeof(text_data), "Sensor partial error: SHT40/BMP280 not responding (time: %u, voltage: %.3fV, rtc_status: %s)", 
+        timestamp, isnan(voltage) ? 0.0f : voltage, rtc_status);
     } else {
-      len = snprintf(text_data, sizeof(text_data), "%u,%.1f,%.1f,%.1f,%.3f",
+      len = snprintf(text_data, sizeof(text_data), "%u,%.1f,%.1f,%.1f,%.3f,%s",
         timestamp,
         isnan(temp_sht40) ? 0.0f : temp_sht40,
         isnan(humidity_sht40) ? 0.0f : humidity_sht40,
         isnan(pressure_bmp280) ? 0.0f : pressure_bmp280,
-        isnan(voltage) ? 0.0f : voltage
+        isnan(voltage) ? 0.0f : voltage,
+        rtc_status
       );
     }
     
@@ -474,6 +481,28 @@ void setup() {
   delay(1000);
 
   board.begin();
+  
+  // Počkej na stabilizaci I2C sběrnice a RTC modulu po power-on
+  delay(200);
+  
+#if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+  // I2C scan pro diagnostiku (jen v debug módu)
+  SENSOR_LOG_PRINTLN("[I2C] Scanning I2C bus...");
+  Wire.begin();
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    uint8_t error = Wire.endTransmission();
+    if (error == 0) {
+      SENSOR_LOG_PRINT("[I2C] Device found at address 0x");
+      if (addr < 16) SENSOR_LOG_PRINT("0");
+      SENSOR_LOG_PRINT(addr, HEX);
+      SENSOR_LOG_PRINT(" (");
+      SENSOR_LOG_PRINT(addr);
+      SENSOR_LOG_PRINTLN(")");
+    }
+  }
+  SENSOR_LOG_PRINTLN("[I2C] Scan complete");
+#endif
 
 #ifdef DISPLAY_CLASS
   if (display.begin()) {
@@ -580,6 +609,7 @@ void setup() {
     // Po 20 sekundach - pokud neprisel ADVERT, zkus nacist cas z RTC modulu
     if (the_mesh.allow_time_sync) {
       SENSOR_LOG_PRINTLN("[LOG] No ADVERT received - trying to load time from RTC module");
+      
       uint32_t rtc_time = rtc_clock.getCurrentTime();
       if (rtc_time > 1577836800) {  // Validni cas (> 1.1.2020)
         SENSOR_LOG_PRINT("[LOG] RTC module time loaded: ");
@@ -587,8 +617,9 @@ void setup() {
         // Cas z RTC modulu je uz nacteny v systemu, jen vypneme dalsi pokusy o sync
         the_mesh.setAllowTimeSync(false);
       } else {
-        SENSOR_LOG_PRINTLN("[LOG] RTC module time invalid or not available");
-        SENSOR_LOG_PRINTLN("[LOG] No valid time available - will NOT send sensor data");
+        SENSOR_LOG_PRINT("[LOG] RTC module time invalid (got: ");
+        SENSOR_LOG_PRINT(rtc_time);
+        SENSOR_LOG_PRINTLN("), will NOT send sensor data");
       }
     } else {
       SENSOR_LOG_PRINTLN("[LOG] Time was synchronized from ADVERT");

@@ -38,6 +38,9 @@ void AutoDiscoverRTCClock::begin(TwoWire& wire) {
 
   if (i2c_probe(wire, DS3231_ADDRESS)) {
     ds3231_success = rtc_3231.begin(&wire);
+    #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+      Serial.println(ds3231_success ? "[RTC] DS3231 initialized successfully" : "[RTC] DS3231 initialization failed");
+    #endif
     
     // Pokud je DS3231 úspěšně inicializován, načti čas z modulu
     #ifdef ESP_PLATFORM
@@ -45,10 +48,36 @@ void AutoDiscoverRTCClock::begin(TwoWire& wire) {
       // Načti čas z DS3231 modulu a nastav ho do systému
       DateTime rtc_time = rtc_3231.now();
       uint32_t rtc_unixtime = rtc_time.unixtime();
+      #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+        Serial.print("[RTC] DS3231 current time: ");
+        Serial.print(rtc_unixtime);
+        Serial.print(" (");
+        Serial.print(rtc_time.year());
+        Serial.print("-");
+        Serial.print(rtc_time.month());
+        Serial.print("-");
+        Serial.print(rtc_time.day());
+        Serial.print(" ");
+        Serial.print(rtc_time.hour());
+        Serial.print(":");
+        Serial.print(rtc_time.minute());
+        Serial.print(":");
+        Serial.print(rtc_time.second());
+        Serial.println(")");
+      #endif
       // Ověř, že čas je rozumný (větší než 1. ledna 2020 = 1577836800)
       if (rtc_unixtime > 1577836800) {
         // Nastav čas do systému přímo (před tím, než fallback obnoví čas z RTC paměti)
         _fallback->setCurrentTime(rtc_unixtime);
+        #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+          Serial.println("[RTC] DS3231 time is valid - system time updated");
+        #endif
+      } else {
+        // RTC má nevalidní čas - RTC neběží (baterie vybitá nebo čas nikdy nebyl nastaven)
+        // Čas se nastaví až když přijde ADVERT packet (v setCurrentTime())
+        #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+          Serial.println("[RTC] DS3231 time is INVALID (< 1.1.2020) - RTC not running, waiting for ADVERT sync");
+        #endif
       }
     }
     #endif
@@ -59,6 +88,9 @@ void AutoDiscoverRTCClock::begin(TwoWire& wire) {
 	rtc_rv3028.writeToRegister(0x37, 0xB4); // Direct Switching Mode (DSM): when VDD < VBACKUP, switchover occurs from VDD to VBACKUP
 	rtc_rv3028.set24HourMode(); // Set the device to use the 24hour format (default) instead of the 12 hour format
     rv3028_success = true;
+    #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+      Serial.println("[RTC] RV3028 initialized successfully");
+    #endif
     
     // Stejně pro RV3028 (pouze pokud DS3231 není dostupný)
     #ifdef ESP_PLATFORM
@@ -73,15 +105,42 @@ void AutoDiscoverRTCClock::begin(TwoWire& wire) {
         rtc_rv3028.getSecond()
       );
       uint32_t rtc_unixtime = rtc_time.unixtime();
+      #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+        Serial.print("[RTC] RV3028 current time: ");
+        Serial.print(rtc_unixtime);
+        Serial.print(" (");
+        Serial.print(rtc_time.year());
+        Serial.print("-");
+        Serial.print(rtc_time.month());
+        Serial.print("-");
+        Serial.print(rtc_time.day());
+        Serial.print(" ");
+        Serial.print(rtc_time.hour());
+        Serial.print(":");
+        Serial.print(rtc_time.minute());
+        Serial.print(":");
+        Serial.print(rtc_time.second());
+        Serial.println(")");
+      #endif
       // Ověř, že čas je rozumný (větší než 1. ledna 2020 = 1577836800)
       if (rtc_unixtime > 1577836800) {
         _fallback->setCurrentTime(rtc_unixtime);
+        #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+          Serial.println("[RTC] RV3028 time is valid - system time updated");
+        #endif
+      } else {
+        #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+          Serial.println("[RTC] RV3028 time is INVALID (< 1.1.2020) - ignoring");
+        #endif
       }
     }
     #endif
   }
   if(i2c_probe(wire,PCF8563_ADDRESS)){
     rtc_8563_success = rtc_8563.begin(&wire);
+    #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+      Serial.println(rtc_8563_success ? "[RTC] PCF8563 initialized successfully" : "[RTC] PCF8563 initialization failed");
+    #endif
     
     // Stejně pro PCF8563 (pouze pokud DS3231 a RV3028 nejsou dostupné)
     #ifdef ESP_PLATFORM
@@ -89,9 +148,33 @@ void AutoDiscoverRTCClock::begin(TwoWire& wire) {
       // Načti čas z PCF8563 modulu a nastav ho do systému
       DateTime rtc_time = rtc_8563.now();
       uint32_t rtc_unixtime = rtc_time.unixtime();
+      #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+        Serial.print("[RTC] PCF8563 current time: ");
+        Serial.print(rtc_unixtime);
+        Serial.print(" (");
+        Serial.print(rtc_time.year());
+        Serial.print("-");
+        Serial.print(rtc_time.month());
+        Serial.print("-");
+        Serial.print(rtc_time.day());
+        Serial.print(" ");
+        Serial.print(rtc_time.hour());
+        Serial.print(":");
+        Serial.print(rtc_time.minute());
+        Serial.print(":");
+        Serial.print(rtc_time.second());
+        Serial.println(")");
+      #endif
       // Ověř, že čas je rozumný (větší než 1. ledna 2020 = 1577836800)
       if (rtc_unixtime > 1577836800) {
         _fallback->setCurrentTime(rtc_unixtime);
+        #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+          Serial.println("[RTC] PCF8563 time is valid - system time updated");
+        #endif
+      } else {
+        #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
+          Serial.println("[RTC] PCF8563 time is INVALID (< 1.1.2020) - ignoring");
+        #endif
       }
     }
     #endif
@@ -118,6 +201,65 @@ uint32_t AutoDiscoverRTCClock::getCurrentTime() {
   return _fallback->getCurrentTime();
 }
 
+bool AutoDiscoverRTCClock::isRTCRunning() const {
+  // Zkontroluj, jestli RTC modul má validní čas (> 1.1.2020)
+  uint32_t rtc_time = 0;
+  if (ds3231_success) {
+    rtc_time = rtc_3231.now().unixtime();
+  } else if (rv3028_success) {
+    rtc_time = DateTime(
+        rtc_rv3028.getYear(),
+        rtc_rv3028.getMonth(),
+        rtc_rv3028.getDate(),
+        rtc_rv3028.getHour(),
+        rtc_rv3028.getMinute(),
+        rtc_rv3028.getSecond()
+    ).unixtime();
+  } else if (rtc_8563_success) {
+    rtc_time = rtc_8563.now().unixtime();
+  } else {
+    return false;  // Žádný RTC modul není dostupný
+  }
+  
+  // Validní čas je větší než 1. ledna 2020 (1577836800)
+  return (rtc_time > 1577836800);
+}
+
+const char* AutoDiscoverRTCClock::getRTCStatus() const {
+  // Zkontroluj, jestli je RTC modul detekován
+  if (!ds3231_success && !rv3028_success && !rtc_8563_success) {
+    return "NOT_DETECTED";  // RTC modul není detekován na I2C sběrnici
+  }
+  
+  // Zkontroluj, jestli má validní čas
+  uint32_t rtc_time = 0;
+  const char* rtc_type = "UNKNOWN";
+  
+  if (ds3231_success) {
+    rtc_time = rtc_3231.now().unixtime();
+    rtc_type = "DS3231";
+  } else if (rv3028_success) {
+    rtc_time = DateTime(
+        rtc_rv3028.getYear(),
+        rtc_rv3028.getMonth(),
+        rtc_rv3028.getDate(),
+        rtc_rv3028.getHour(),
+        rtc_rv3028.getMinute(),
+        rtc_rv3028.getSecond()
+    ).unixtime();
+    rtc_type = "RV3028";
+  } else if (rtc_8563_success) {
+    rtc_time = rtc_8563.now().unixtime();
+    rtc_type = "PCF8563";
+  }
+  
+  if (rtc_time > 1577836800) {
+    return "OK";  // RTC má validní čas
+  } else {
+    return "INVALID_TIME";  // RTC má nevalidní čas (pravděpodobně baterie vybitá nebo čas nebyl nastaven)
+  }
+}
+
 void AutoDiscoverRTCClock::setCurrentTime(uint32_t time) {
   #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
     Serial.print("[RTC] setCurrentTime called with: ");
@@ -126,8 +268,22 @@ void AutoDiscoverRTCClock::setCurrentTime(uint32_t time) {
   
   if (ds3231_success) {
     rtc_3231.adjust(DateTime(time));
+    delay(50);  // Počkej na dokončení zápisu do DS3231
+    // Ověř, že se čas skutečně zapsal
+    DateTime verify_time = rtc_3231.now();
+    uint32_t verify_unixtime = verify_time.unixtime();
     #if defined(MESH_DEBUG) || defined(SENSOR_DEBUG)
-      Serial.println("[RTC] DS3231 external RTC updated");
+      Serial.print("[RTC] DS3231 write: ");
+      Serial.print(time);
+      Serial.print(" -> read back: ");
+      Serial.print(verify_unixtime);
+      if (verify_unixtime == time || abs((int32_t)(verify_unixtime - time)) <= 1) {
+        Serial.println(" OK");
+      } else {
+        Serial.print(" MISMATCH (diff: ");
+        Serial.print((int32_t)(verify_unixtime - time));
+        Serial.println(")");
+      }
     #endif
   } else if (rv3028_success) {
     auto dt = DateTime(time);
