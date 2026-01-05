@@ -1,64 +1,60 @@
-#include <Arduino.h>
-#include "nano-g2.h"
-
-#ifdef NANO_G2_ULTRA
+#if defined(NRF52_PLATFORM)
+#include "NRF52Board.h"
 
 #include <bluefruit.h>
-#include <Wire.h>
 
 static BLEDfu bledfu;
 
-static void connect_callback(uint16_t conn_handle)
-{
+static void connect_callback(uint16_t conn_handle) {
   (void)conn_handle;
   MESH_DEBUG_PRINTLN("BLE client connected");
 }
 
-static void disconnect_callback(uint16_t conn_handle, uint8_t reason)
-{
+static void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
   (void)conn_handle;
   (void)reason;
 
   MESH_DEBUG_PRINTLN("BLE client disconnected");
 }
 
-void NanoG2Ultra::begin()
-{
+void NRF52Board::begin() {
+  startup_reason = BD_STARTUP_NORMAL;
+}
+
+void NRF52BoardDCDC::begin() {
   NRF52Board::begin();
 
-  // set user button
-  pinMode(PIN_BUTTON1, INPUT);
+  // Enable DC/DC converter for improved power efficiency
+  uint8_t sd_enabled = 0;
+  sd_softdevice_is_enabled(&sd_enabled);
+  if (sd_enabled) {
+    sd_power_dcdc_mode_set(NRF_POWER_DCDC_ENABLE);
+  } else {
+    NRF_POWER->DCDCEN = 1;
+  }
+}
 
-  // the external notification circuit is shared for both buzzer and led
-  pinMode(EXT_NOTIFY_OUT, OUTPUT);
-  digitalWrite(EXT_NOTIFY_OUT, LOW);
+// Temperature from NRF52 MCU
+float NRF52Board::getMCUTemperature() {
+  NRF_TEMP->TASKS_START = 1; // Start temperature measurement
 
-  pinMode(GPS_EN, OUTPUT); // Initialize GPS power pin
+  long startTime = millis();  
+  while (NRF_TEMP->EVENTS_DATARDY == 0) { // Wait for completion. Should complete in 50us
+    if(millis() - startTime > 5) {  // To wait 5ms just in case
+      NRF_TEMP->TASKS_STOP = 1;
+      return NAN;
+    }
+  }
   
-  Wire.begin();
-  pinMode(SX126X_POWER_EN, OUTPUT);
-  digitalWrite(SX126X_POWER_EN, HIGH);
+  NRF_TEMP->EVENTS_DATARDY = 0; // Clear event flag
 
-  delay(10);
+  int32_t temp = NRF_TEMP->TEMP; // In 0.25 *C units
+  NRF_TEMP->TASKS_STOP = 1;
+
+  return temp * 0.25f; // Convert to *C
 }
 
-uint16_t NanoG2Ultra::getBattMilliVolts()
-{
-  int adcvalue = 0;
-
-  analogReference(AR_INTERNAL_3_0);
-  analogReadResolution(12);
-  delay(10);
-
-  // ADC range is 0..3000mV and resolution is 12-bit (0..4095)
-  adcvalue = analogRead(PIN_VBAT_READ);
-  // Convert the raw value to compensated mv, taking the resistor-
-  // divider into account (providing the actual LIPO voltage)
-  return (uint16_t)((float)adcvalue * REAL_VBAT_MV_PER_LSB);
-}
-
-bool NanoG2Ultra::startOTAUpdate(const char *id, char reply[])
-{
+bool NRF52BoardOTA::startOTAUpdate(const char *id, char reply[]) {
   // Config the peripheral connection with maximum bandwidth
   // more SRAM required by SoftDevice
   // Note: All config***() function must be called before begin()
@@ -69,7 +65,7 @@ bool NanoG2Ultra::startOTAUpdate(const char *id, char reply[])
   // Set max power. Accepted values are: -40, -30, -20, -16, -12, -8, -4, 0, 4
   Bluefruit.setTxPower(4);
   // Set the BLE device name
-  Bluefruit.setName("NANO_G2_OTA");
+  Bluefruit.setName(ota_name);
 
   Bluefruit.Periph.setConnectCallback(connect_callback);
   Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
@@ -97,7 +93,12 @@ bool NanoG2Ultra::startOTAUpdate(const char *id, char reply[])
   Bluefruit.Advertising.setFastTimeout(30);   // number of seconds in fast mode
   Bluefruit.Advertising.start(0);             // 0 = Don't stop advertising after n seconds
 
-  strcpy(reply, "OK - started");
+  uint8_t mac_addr[6];
+  memset(mac_addr, 0, sizeof(mac_addr));
+  Bluefruit.getAddr(mac_addr);
+  sprintf(reply, "OK - mac: %02X:%02X:%02X:%02X:%02X:%02X", mac_addr[5], mac_addr[4], mac_addr[3],
+          mac_addr[2], mac_addr[1], mac_addr[0]);
+
   return true;
 }
 #endif
