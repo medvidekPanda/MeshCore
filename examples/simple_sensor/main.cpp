@@ -585,9 +585,13 @@ void setup() {
 
     // On first startup, wait 20 seconds to allow time sync from advert
   // IMPORTANT: During this wait, NO sensor data will be sent - only listening for ADVERT
+  unsigned long power_on_start = 0;  // Track when power-on started for BT availability window
   if (!is_deepsleep_wakeup) {
+    power_on_start = millis();  // Remember when we started
+    
     SENSOR_LOG_PRINTLN("[LOG] First startup - waiting 20 seconds for time sync from ADVERT");
     SENSOR_LOG_PRINTLN("[LOG] During wait: NO sensor data will be sent, only listening for ADVERT");
+    SENSOR_LOG_PRINTLN("[LOG] BT will remain active for 60 seconds total for configuration");
     
     unsigned long wait_start = millis();
     while (millis() - wait_start < 20000) {  // 20 seconds
@@ -653,6 +657,37 @@ void setup() {
     }
   } else {
     SENSOR_LOG_PRINTLN("[LOG] No valid time - skipping sensor data transmission");
+  }
+
+  // After power-on (not deep sleep wakeup), keep device active for 60 seconds total
+  // to allow BT configuration. This gives user time to connect and make changes.
+  if (!is_deepsleep_wakeup && power_on_start > 0) {
+    unsigned long elapsed_since_poweron = millis() - power_on_start;
+    unsigned long target_active_time = 60000;  // 60 seconds total active time
+    
+    if (elapsed_since_poweron < target_active_time) {
+      unsigned long remaining_time = target_active_time - elapsed_since_poweron;
+      SENSOR_LOG_PRINT("[LOG] Keeping BT active for configuration - remaining time: ");
+      SENSOR_LOG_PRINT(remaining_time / 1000);
+      SENSOR_LOG_PRINTLN(" seconds");
+      
+      unsigned long wait_start = millis();
+      while (millis() - wait_start < remaining_time) {
+        unsigned long elapsed = millis() - wait_start;
+        if (elapsed % 10000 < 100) {  // Progress every 10 seconds
+          SENSOR_LOG_PRINT("[LOG] BT active... ");
+          SENSOR_LOG_PRINT((remaining_time - elapsed) / 1000);
+          SENSOR_LOG_PRINTLN("s remaining");
+        }
+        
+        the_mesh.loop();  // Keep mesh running (includes BT)
+        sensors.loop();
+        rtc_clock.tick();
+        delay(100);
+      }
+      
+      SENSOR_LOG_PRINTLN("[LOG] 60 second BT window finished");
+    }
   }
 
   // Final processing before deep sleep (always, for both debug and deep sleep mode)
