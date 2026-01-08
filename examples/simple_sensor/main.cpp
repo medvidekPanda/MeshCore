@@ -261,7 +261,7 @@ protected:
     // Parse telemetry data to extract values
     LPPReader reader(telemetry.getBuffer(), telemetry.getSize());
     uint8_t channel_id, type;
-    float temp_sht40 = NAN, humidity_sht40 = NAN, pressure_bmp280 = NAN, voltage = NAN;
+    float temp_sht40 = NAN, humidity_sht40 = NAN, pressure_bmp280 = NAN, altitude_bmp280 = NAN, voltage = NAN;
     bool found_sht40_temp = false, found_sht40_humidity = false;
     
     while (reader.readHeader(channel_id, type)) {
@@ -286,6 +286,13 @@ protected:
           float press_val;
           if (reader.readPressure(press_val)) {
             pressure_bmp280 = press_val;
+          }
+          break;
+        }
+        case LPP_ALTITUDE: {
+          float alt_val;
+          if (reader.readAltitude(alt_val)) {
+            altitude_bmp280 = alt_val;
           }
           break;
         }
@@ -320,11 +327,12 @@ protected:
       len = snprintf(text_data, sizeof(text_data), "Sensor partial error: SHT40/BMP280 not responding (time: %u, voltage: %.3fV, rtc_status: %s)", 
         timestamp, isnan(voltage) ? 0.0f : voltage, rtc_status);
     } else {
-      len = snprintf(text_data, sizeof(text_data), "%u,%.1f,%.1f,%.1f,%.3f,%s",
+      len = snprintf(text_data, sizeof(text_data), "%u,%.1f,%.1f,%.1f,%.1f,%.3f,%s",
         timestamp,
         isnan(temp_sht40) ? 0.0f : temp_sht40,
         isnan(humidity_sht40) ? 0.0f : humidity_sht40,
         isnan(pressure_bmp280) ? 0.0f : pressure_bmp280,
+        isnan(altitude_bmp280) ? 0.0f : altitude_bmp280,
         isnan(voltage) ? 0.0f : voltage,
         rtc_status
       );
