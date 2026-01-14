@@ -38,11 +38,11 @@
 #endif
 
 #ifndef SENSOR_CHANNEL_SECRET
-  #error "SENSOR_CHANNEL_SECRET must be defined in platformio.ini or platformio.private.ini"
+  #define SENSOR_CHANNEL_SECRET "00000000000000000000000000000000"
 #endif
 
 #ifndef SENSOR_CHANNEL_NAME
-  #error "SENSOR_CHANNEL_NAME must be defined in platformio.ini or platformio.private.ini"
+  #define SENSOR_CHANNEL_NAME "default"
 #endif
 
 #ifndef COMPANION_ID
@@ -347,6 +347,10 @@ protected:
   }
 
   void sendMessageToChannel(const char* message) {
+    if (strcmp(SENSOR_CHANNEL_SECRET, "00000000000000000000000000000000") == 0) {
+      SENSOR_LOG_PRINTLN("[LOG] Warning: SENSOR_CHANNEL_SECRET not defined, skipping message sending to channel");
+      return;
+    }
     mesh::GroupChannel channel = createChannelFromHexSecret(SENSOR_CHANNEL_SECRET);
     
     // Get sender name (first 4 bytes of public key as hex string)
