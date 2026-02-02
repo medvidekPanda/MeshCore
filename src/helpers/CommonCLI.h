@@ -51,15 +51,6 @@ struct NodePrefs { // persisted to file
   uint32_t discovery_mod_timestamp;
   float adc_multiplier;
   char owner_info[120];
-  // WiFi and Bluetooth settings
-  uint8_t wifi_enabled;  // boolean, default 0 (disabled)
-  uint8_t bt_enabled;    // boolean, default 0 (disabled)
-  // MQTT Bridge settings (dual server support)
-  uint8_t mqtt_server_index;  // 0 or 1, which MQTT server is active
-  char mqtt_broker2[64];      // Second MQTT broker IP/hostname
-  uint16_t mqtt_port2;        // Second MQTT broker port
-  char mqtt_user2[32];        // Second MQTT username (optional)
-  char mqtt_pass2[32];        // Second MQTT password (optional)
 };
 
 class CommonCLICallbacks {
@@ -96,17 +87,6 @@ public:
     // no op by default
   };
 
-  virtual void setWifiState(bool enable) {
-    // no op by default
-  };
-
-  virtual void setBtState(bool enable) {
-    // no op by default
-  };
-
-  virtual void switchMQTTServer(uint8_t server_index) {
-    // no op by default
-  };
 };
 
 class CommonCLI {
